@@ -4,15 +4,25 @@ import { persistPublicFile } from "./persist";
 
 const COUNT = 5;
 
+const LOOKS = [
+  "a tighter top and a straighter jean, jewellery worn higher on the chest",
+  "a looser tank, an open vest, and wider jeans, jewellery stacked lower",
+  "sleeves or layers added over the base outfit, a different jean wash, fewer pieces of jewellery",
+  "a cropped top and baggier jeans, jewellery spread across neck and wrists",
+  "the vest worn closed, jeans cuffed, and a heavier jewellery arrangement",
+];
+
 function stylePrompt(style: string, index: number) {
+  const look = LOOKS[index % LOOKS.length];
   return [
     "Photorealistic full-length 9:16 photograph of the same person as the reference image.",
     "Do not change the person at all. No changes to the face, hair, hairline, expression, pout, eyes, skin, or identity. Match the reference exactly.",
     "They are standing in a clean, strong, bold stance on a plain white studio background.",
     "Arms are fully visible. Legs are fully visible, head to toe.",
     "No props, no furniture, no text, no watermark, and no other elements in the frame. Just them standing there.",
-    `The only change is their clothing and styling: ${style}.`,
-    `Outfit variation ${index + 1} of ${COUNT}, same face, hair, expression, stance, and white studio. Different garment details only.`,
+    `Style direction from the user: ${style}.`,
+    `This is clothing variation ${index + 1} of ${COUNT}. Interpret that style as: ${look}.`,
+    "Do not copy the other variations. Change the cut, layering, fit, and jewellery placement. Keep the same person, stance, and white studio.",
   ].join(" ");
 }
 
@@ -29,6 +39,7 @@ async function oneImage(imageUrl: string, style: string, index: number, userId: 
       aspect_ratio: "9:16",
       resolution: "1K",
       quality: "low",
+      seed: 1100 + index * 137,
       n: 1,
       input_references: [{ type: "image_url", image_url: { url: imageUrl } }],
     }),
@@ -69,7 +80,7 @@ export async function generateStyleImages(input: {
   const jobs = Array.from({ length: COUNT }, (_, index) => index);
   const urls: string[] = [];
   let firstError: string | null = null;
-  const limit = 4;
+  const limit = COUNT;
   let cursor = 0;
 
   async function worker() {

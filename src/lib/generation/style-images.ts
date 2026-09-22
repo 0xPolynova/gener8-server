@@ -6,12 +6,13 @@ const COUNT = 10;
 
 function stylePrompt(style: string, index: number) {
   return [
-    "Photorealistic full-length portrait in a vertical 9:16 frame.",
-    "Use the reference photo only to keep this exact person's face and identity.",
-    "Show them from head to toe, full body, standing, sharp focus.",
-    `Change only their clothing and styling to: ${style}.`,
-    `This is outfit variation ${index + 1} of ${COUNT}: a different pose and different garment details within that same style.`,
-    "No text, no watermark, no collage, no extra people.",
+    "Photorealistic full-length 9:16 photograph of the same person as the reference image.",
+    "Keep their face and identity exactly the same.",
+    "They are standing in a clean, strong, bold stance on a plain white studio background.",
+    "Arms are fully visible. Legs are fully visible, head to toe.",
+    "No props, no furniture, no text, no watermark, and no other elements in the frame. Just them standing there.",
+    `Clothing and styling: ${style}.`,
+    `Outfit variation ${index + 1} of ${COUNT}, same stance and white studio, different garment details only.`,
   ].join(" ");
 }
 

@@ -132,7 +132,11 @@ export const env = {
   ),
   atlasModelRef: read("ATLAS_MODEL_REF") ||
     read("ATLAS_MODEL_SEEDANCE_REF", "alibaba/wan-3.0/reference-to-video"),
-  openrouterApiKey: read("OPENROUTER_API_KEY"),
+  openrouterApiKey: read("OPENROUTER_API_KEY") || read("VIDEO_PROVIDER_API_KEY"),
+  openrouterImageModel: read(
+    "OPENROUTER_IMAGE_MODEL",
+    "google/gemini-3.1-flash-lite-image",
+  ),
   openrouterBaseUrl: read(
     "OPENROUTER_BASE_URL",
     "https://openrouter.ai/api/v1",

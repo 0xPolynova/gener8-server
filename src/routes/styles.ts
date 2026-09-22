@@ -64,18 +64,26 @@ stylesRouter.post(
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Missing style selection.");
     }
 
-    let url = imageUrl;
-    let cfImageId: string | null = null;
-    let cdn = false;
-    if (cloudflareImagesConfigured()) {
-      const bytes = await readImageBytes(imageUrl);
-      const uploaded = await uploadCloudflareImage(bytes, `${handle}-style.jpg`);
-      if (uploaded) {
-        url = uploaded.url;
-        cfImageId = uploaded.id;
-        cdn = true;
-      }
+    if (!cloudflareImagesConfigured()) {
+      throw new AppError(
+        ERROR_CODES.GENERATION_FAILED,
+        500,
+        "Cloudflare Images isn’t configured, so this style can’t be saved.",
+      );
     }
+    const bytes = await readImageBytes(imageUrl);
+    const uploaded = await uploadCloudflareImage(bytes, `${handle}-style.jpg`, {
+      kind: "kol-style",
+      handle,
+      kolId,
+      style,
+    });
+    if (!uploaded) {
+      throw new AppError(ERROR_CODES.UPLOAD_FAILED, 502, "Couldn’t save this style to the CDN.");
+    }
+    const url = uploaded.url;
+    const cfImageId = uploaded.id;
+    const cdn = true;
 
     const stored = await saveKolStyle({
       kolId,

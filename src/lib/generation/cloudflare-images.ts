@@ -7,10 +7,15 @@ export function cloudflareImagesConfigured() {
   return Boolean(env.cfAccountId && env.cfImagesApiToken);
 }
 
-export async function uploadCloudflareImage(buffer: Buffer, filename: string) {
+export async function uploadCloudflareImage(
+  buffer: Buffer,
+  filename: string,
+  meta?: Record<string, string>,
+) {
   if (!cloudflareImagesConfigured()) return null;
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(buffer)]), filename);
+  if (meta) form.append("metadata", JSON.stringify(meta));
   const res = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1`,
     {
@@ -76,6 +81,51 @@ export async function saveKolStyle(input: {
 }
 
 export async function listKolStyles(handle: string, cursor: string | null, limit: number) {
+  if (cloudflareImagesConfigured()) return listKolStylesFromCdn(handle, cursor, limit);
+  return listKolStylesFromDb(handle, cursor, limit);
+}
+
+async function listKolStylesFromCdn(handle: string, cursor: string | null, limit: number) {
+  const wanted: { id: string; url: string; style: string }[] = [];
+  let page = Math.max(1, Number(cursor) || 1);
+  let more = true;
+  const perPage = 50;
+  while (wanted.length < limit && more && page < (Number(cursor) || 1) + 6) {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1?page=${page}&per_page=${perPage}`,
+      { headers: { Authorization: `Bearer ${env.cfImagesApiToken}` } },
+    );
+    const data = (await res.json().catch(() => ({}))) as {
+      success?: boolean;
+      errors?: { message?: string }[];
+      result?: { images?: { id?: string; filename?: string; meta?: Record<string, string>; variants?: string[] }[] };
+      result_info?: { page?: number; total_count?: number };
+    };
+    if (!res.ok || !data.success) {
+      throw new Error(data.errors?.[0]?.message || `Cloudflare Images list failed (${res.status}).`);
+    }
+    for (const image of data.result?.images ?? []) {
+      const meta = image.meta ?? {};
+      const tagged = meta.kind === "kol-style" && meta.handle === handle;
+      const named = (image.filename ?? "").startsWith(`${handle}-style`);
+      if (!tagged && !named) continue;
+      const url =
+        image.variants?.find((item) => item.endsWith("/public")) ??
+        image.variants?.[0] ??
+        `https://imagedelivery.net/${env.cfImagesAccountHash}/${image.id}/public`;
+      if (image.id) wanted.push({ id: image.id, url, style: meta.style ?? "" });
+    }
+    const total = data.result_info?.total_count ?? 0;
+    more = page * perPage < total;
+    page += 1;
+  }
+  return {
+    images: wanted.slice(0, limit),
+    nextCursor: more ? String(page) : null,
+  };
+}
+
+async function listKolStylesFromDb(handle: string, cursor: string | null, limit: number) {
   const client = createSupabaseAdmin();
   if (!client) return { images: [] as { id: string; url: string; style: string }[], nextCursor: null as string | null };
   let query = client

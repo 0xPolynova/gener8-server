@@ -389,9 +389,13 @@ export async function sbListDiscover(
   } else if (
     filter !== "trending" &&
     filter !== "latest" &&
-    filter !== "viral"
+    filter !== "viral" &&
+    filter !== "15s" &&
+    filter !== "30s"
   ) {
     query = query.eq("category", filter);
+  } else if (filter === "15s" || filter === "30s") {
+    query = query.eq("duration", filter === "15s" ? 15 : 30);
   }
 
   const { data, error } = await query;

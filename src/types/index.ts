@@ -203,6 +203,8 @@ export type DiscoverFilter =
   | "tokens"
   | "memecoins"
   | "pnl"
+  | "15s"
+  | "30s"
   | "experimental";
 
 export type CreationsTab = "all" | "published" | "private" | "generating";

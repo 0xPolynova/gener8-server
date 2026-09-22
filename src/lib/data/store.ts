@@ -127,6 +127,9 @@ class MemoryStore {
       });
     } else if (filter === "viral") {
       list = [...list].sort((a, b) => b.views - a.views || b.likes - a.likes);
+    } else if (filter === "15s" || filter === "30s") {
+      const seconds = filter === "15s" ? 15 : 30;
+      list = list.filter((v) => v.duration === seconds);
     } else {
       list = list.filter((v) => v.category === filter);
     }

@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+
+# env (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# generated media
+uploads/
+
+# logs / os
+*.log
+.DS_Store

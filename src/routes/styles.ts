@@ -4,6 +4,7 @@ import { AppError, ERROR_CODES } from "@/lib/errors";
 import { generateStyleImages } from "@/lib/generation/style-images";
 import {
   cloudflareImagesConfigured,
+  listKolStyles,
   readImageBytes,
   saveKolStyle,
   uploadCloudflareImage,
@@ -11,6 +12,19 @@ import {
 import { asyncHandler } from "@/middleware/async";
 
 export const stylesRouter = Router();
+
+stylesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const session = await getSession(req);
+    if (!session) throw new AppError(ERROR_CODES.UNAUTHENTICATED, 401);
+    const handle = String(req.query.handle ?? "").trim();
+    if (!handle) throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Missing KOL.");
+    const cursor = String(req.query.cursor ?? "").trim() || null;
+    const page = await listKolStyles(handle, cursor, 15);
+    res.json(page);
+  }),
+);
 
 stylesRouter.post(
   "/",

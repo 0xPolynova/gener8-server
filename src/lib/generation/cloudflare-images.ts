@@ -74,3 +74,27 @@ export async function saveKolStyle(input: {
   }
   return true;
 }
+
+export async function listKolStyles(handle: string, cursor: string | null, limit: number) {
+  const client = createSupabaseAdmin();
+  if (!client) return { images: [] as { id: string; url: string; style: string }[], nextCursor: null as string | null };
+  let query = client
+    .from("kol_styles")
+    .select("id,image_url,style_prompt,created_at")
+    .eq("handle", handle)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (cursor) query = query.lt("created_at", cursor);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) console.error("[gener8] kol style list failed", error.message);
+    return { images: [], nextCursor: null };
+  }
+  const images = data.map((row) => ({
+    id: String(row.id),
+    url: String(row.image_url),
+    style: String(row.style_prompt ?? ""),
+  }));
+  const nextCursor = data.length === limit ? String(data[data.length - 1].created_at) : null;
+  return { images, nextCursor };
+}

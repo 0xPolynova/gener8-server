@@ -15,14 +15,16 @@ const LOOKS = [
 function stylePrompt(style: string, index: number) {
   const look = LOOKS[index % LOOKS.length];
   return [
-    "Photorealistic full-length 9:16 photograph of the same person as the reference image.",
-    "Do not change the person at all. No changes to the face, hair, hairline, expression, pout, eyes, skin, or identity. Match the reference exactly.",
-    "They are standing in a clean, strong, bold stance on a plain white studio background.",
-    "Arms are fully visible. Legs are fully visible, head to toe.",
-    "No props, no furniture, no text, no watermark, and no other elements in the frame. Just them standing there.",
-    `Style direction from the user: ${style}.`,
-    `This is clothing variation ${index + 1} of ${COUNT}. Interpret that style as: ${look}.`,
-    "Do not copy the other variations. Change the cut, layering, fit, and jewellery placement. Keep the same person, stance, and white studio.",
+    "Edit the reference photo. This is a wardrobe change only, not a new person.",
+    "The face must stay exactly the same. Do not change facial features, bone structure, eyes, eyebrows, nose, lips, pout, expression, skin, beard, or any mark on the face.",
+    "Do not change the hair at all. Same hairline, length, color, texture, and style as the reference.",
+    "Do not beautify, age, de-age, slim, or redraw the head.",
+    "Photorealistic full-length 9:16 frame. Clean, strong, bold stance. Plain white studio background.",
+    "Arms fully visible. Legs fully visible, head to toe.",
+    "No props, no furniture, no text, no watermark, nothing else in the frame.",
+    `Only the clothes change, following this style: ${style}.`,
+    `Clothing variation ${index + 1} of ${COUNT}: ${look}.`,
+    "Vary the garments only. The head must still match the reference exactly.",
   ].join(" ");
 }
 

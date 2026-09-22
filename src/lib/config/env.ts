@@ -135,7 +135,7 @@ export const env = {
   openrouterApiKey: read("OPENROUTER_API_KEY") || read("VIDEO_PROVIDER_API_KEY"),
   openrouterImageModel: read(
     "OPENROUTER_IMAGE_MODEL",
-    "black-forest-labs/flux.2-klein-4b",
+    "google/gemini-3.1-flash-lite-image",
   ),
   cfAccountId: read("CF_ACCOUNT_ID"),
   cfImagesApiToken: read("CF_IMAGES_API_TOKEN"),

@@ -14,9 +14,8 @@ export async function persistPublicFile(key: string, buffer: Buffer) {
   await fs.writeFile(path.join(dir, file), buffer);
   const origin =
     process.env.API_PUBLIC_URL ||
-    (env.nodeEnv === "production"
-      ? env.appUrl
-      : `http://127.0.0.1:${env.port}`);
+    process.env.RENDER_EXTERNAL_URL ||
+    (env.nodeEnv === "production" ? env.appUrl : `http://127.0.0.1:${env.port}`);
   return `${origin.replace(/\/$/, "")}/uploads/${file}`;
 }
 

@@ -166,3 +166,19 @@ grant all privileges on all routines in schema public to postgres, service_role;
 grant select on table public.users, public.videos, public.likes, public.follows to anon, authenticated;
 alter default privileges in schema public grant all on tables to service_role;
 alter default privileges in schema public grant all on sequences to service_role;
+
+create table if not exists public.kol_styles (
+  id text primary key,
+  kol_id text not null,
+  handle text not null,
+  style_prompt text not null default '',
+  image_url text not null,
+  cf_image_id text,
+  user_id text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists kol_styles_handle_idx on public.kol_styles(handle);
+create index if not exists kol_styles_kol_id_idx on public.kol_styles(kol_id);
+
+grant all privileges on table public.kol_styles to postgres, service_role;

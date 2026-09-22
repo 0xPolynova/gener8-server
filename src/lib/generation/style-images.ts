@@ -2,7 +2,7 @@ import { env } from "@/lib/config/env";
 import { AppError, ERROR_CODES } from "@/lib/errors";
 import { persistPublicFile } from "./persist";
 
-const COUNT = 10;
+const COUNT = 5;
 
 function stylePrompt(style: string, index: number) {
   return [

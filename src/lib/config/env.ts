@@ -137,6 +137,9 @@ export const env = {
     "OPENROUTER_IMAGE_MODEL",
     "google/gemini-3.1-flash-lite-image",
   ),
+  cfAccountId: read("CF_ACCOUNT_ID"),
+  cfImagesApiToken: read("CF_IMAGES_API_TOKEN"),
+  cfImagesAccountHash: read("CF_IMAGES_ACCOUNT_HASH", "evSvvg4gSrZmei5DvWV8Aw"),
   openrouterBaseUrl: read(
     "OPENROUTER_BASE_URL",
     "https://openrouter.ai/api/v1",

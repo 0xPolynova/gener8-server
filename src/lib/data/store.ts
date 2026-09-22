@@ -125,6 +125,8 @@ class MemoryStore {
         if (aHas !== bHas) return aHas ? -1 : 1;
         return b.likes + b.views / 8 - (a.likes + a.views / 8);
       });
+    } else if (filter === "viral") {
+      list = [...list].sort((a, b) => b.views - a.views || b.likes - a.likes);
     } else {
       list = list.filter((v) => v.category === filter);
     }

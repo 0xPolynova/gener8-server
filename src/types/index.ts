@@ -17,7 +17,10 @@ export type VideoCategory =
   | "memes"
   | "music"
   | "experimental"
-  | "product";
+  | "product"
+  | "tokens"
+  | "memecoins"
+  | "pnl";
 
 export type GridSpan = "normal" | "wide" | "tall" | "hero";
 
@@ -190,12 +193,16 @@ export interface VideoModel {
 
 export type DiscoverFilter =
   | "trending"
+  | "viral"
   | "latest"
   | "following"
   | "cinematic"
   | "animation"
   | "memes"
   | "music"
+  | "tokens"
+  | "memecoins"
+  | "pnl"
   | "experimental";
 
 export type CreationsTab = "all" | "published" | "private" | "generating";

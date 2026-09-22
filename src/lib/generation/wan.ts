@@ -95,7 +95,7 @@ export class WanProvider implements VideoGenerationProvider {
     if (!res.ok) {
       const msg =
         (data as { message?: string }).message ?? `Wan API error ${res.status}`;
-      throw new AppError(ERROR_CODES.PROVIDER_ERROR, 502, msg);
+      throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, msg);
     }
 
     const taskId = (data.output as { task_id?: string } | undefined)?.task_id;

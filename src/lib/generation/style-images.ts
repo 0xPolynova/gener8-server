@@ -7,12 +7,12 @@ const COUNT = 10;
 function stylePrompt(style: string, index: number) {
   return [
     "Photorealistic full-length 9:16 photograph of the same person as the reference image.",
-    "Keep their face and identity exactly the same.",
+    "Do not change the person at all. No changes to the face, hair, hairline, expression, pout, eyes, skin, or identity. Match the reference exactly.",
     "They are standing in a clean, strong, bold stance on a plain white studio background.",
     "Arms are fully visible. Legs are fully visible, head to toe.",
     "No props, no furniture, no text, no watermark, and no other elements in the frame. Just them standing there.",
-    `Clothing and styling: ${style}.`,
-    `Outfit variation ${index + 1} of ${COUNT}, same stance and white studio, different garment details only.`,
+    `The only change is their clothing and styling: ${style}.`,
+    `Outfit variation ${index + 1} of ${COUNT}, same face, hair, expression, stance, and white studio. Different garment details only.`,
   ].join(" ");
 }
 

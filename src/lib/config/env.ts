@@ -45,11 +45,13 @@ function readList(name: string, fallback: string[]) {
 
 function resolveVideoProvider() {
   const named = read("VIDEO_PROVIDER", "");
+  const wan = read("WAN_API_KEY");
   const wavespeed = read("WAVESPEED_API_KEY");
   const fal = read("FAL_KEY");
   const atlas = read("ATLASCLOUD_API_KEY") || read("ATLAS_API_KEY");
   const openrouter = read("OPENROUTER_API_KEY") || read("VIDEO_PROVIDER_API_KEY");
   if (named && named !== "mock") return named;
+  if (wan) return "wan";
   if (wavespeed) return "wavespeed";
   if (fal) return "fal";
   if (atlas) return "atlascloud";
@@ -148,6 +150,9 @@ export const env = {
 
   demoMode: readBool("DEMO_MODE", true),
   demoTokenBalance: readNumber("DEMO_TOKEN_BALANCE", 25000),
+
+  wanApiKey: read("WAN_API_KEY"),
+  wanRegion: read("WAN_REGION", "ap-southeast-1"),
 };
 
 export const isProd = env.nodeEnv === "production";

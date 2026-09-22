@@ -14,6 +14,13 @@ export interface CreateGenerationInput {
   referenceImages?: string[];
   firstFrameImage?: string | null;
   lastFrameImage?: string | null;
+  omniAssets?: OmniAsset[];
+}
+
+export interface OmniAsset {
+  type: "image" | "video" | "audio";
+  url: string;
+  name?: string;
 }
 
 export interface ProviderJob {

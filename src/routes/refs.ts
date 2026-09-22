@@ -7,11 +7,11 @@ import { asyncHandler } from "@/middleware/async";
 
 export const refsRouter = Router();
 
-const MAX_VIDEO_BYTES = 80 * 1024 * 1024;
+const MAX_FILE_BYTES = 80 * 1024 * 1024;
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_VIDEO_BYTES },
+  limits: { fileSize: MAX_FILE_BYTES },
 });
 
 refsRouter.post(
@@ -26,7 +26,7 @@ refsRouter.post(
         new AppError(
           ERROR_CODES.UPLOAD_FAILED,
           400,
-          "Video must be an MP4/MOV under 80 MB.",
+          "File must be an image or video under 80 MB.",
         ),
       );
     });
@@ -37,25 +37,39 @@ refsRouter.post(
 
     const file = req.file;
     if (!file?.buffer?.length) {
-      throw new AppError(
-        ERROR_CODES.UPLOAD_FAILED,
-        400,
-        "Add a video file to use as the base clip.",
-      );
+      throw new AppError(ERROR_CODES.UPLOAD_FAILED, 400, "Add a file to upload.");
     }
-    if (!file.mimetype.startsWith("video/")) {
+
+    const isVideo = file.mimetype.startsWith("video/");
+    const isImage = file.mimetype.startsWith("image/");
+
+    if (!isVideo && !isImage) {
       throw new AppError(
         ERROR_CODES.UPLOAD_FAILED,
         400,
-        "Use a video file (MP4 or MOV).",
+        "Only image or video files are supported.",
       );
     }
 
-    const ext = file.mimetype.includes("quicktime") ? "mov" : "mp4";
+    let ext: string;
+    if (isVideo) {
+      ext = file.mimetype.includes("quicktime") ? "mov" : "mp4";
+    } else {
+      ext = file.mimetype.includes("png")
+        ? "png"
+        : file.mimetype.includes("gif")
+          ? "gif"
+          : file.mimetype.includes("webp")
+            ? "webp"
+            : "jpg";
+    }
+
+    const prefix = isVideo ? "refs-vid" : "refs-img";
     const url = await persistPublicFile(
-      `refs-vid-${session.userId}-${Date.now()}.${ext}`,
+      `${prefix}-${session.userId}-${Date.now()}.${ext}`,
       file.buffer,
     );
-    res.json({ url });
+    const type = isVideo ? "video" : "image";
+    res.json({ url, type });
   }),
 );

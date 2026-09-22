@@ -5,9 +5,14 @@ import { openRouterProvider } from "./openrouter";
 import { atlasCloudProvider } from "./atlascloud";
 import { falProvider } from "./fal";
 import { waveSpeedProvider } from "./wavespeed";
+import { wanProvider } from "./wan";
 
 function namedProvider(name: string): VideoGenerationProvider | null {
   switch (name.toLowerCase()) {
+    case "wan":
+    case "wan3":
+    case "wanx":
+      return wanProvider;
     case "wavespeed":
       return waveSpeedProvider;
     case "fal":
@@ -35,6 +40,8 @@ export function getVideoProvider(name?: string | null): VideoGenerationProvider 
 }
 
 export function providerForGeneration(input: CreateGenerationInput) {
+  // If WAN key is configured, always use it — it handles all modes
+  if (env.wanApiKey) return wanProvider;
   if (input.referenceVideoUrl) return waveSpeedProvider;
   return openRouterProvider;
 }

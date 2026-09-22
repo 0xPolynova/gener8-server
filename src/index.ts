@@ -46,6 +46,7 @@ app.get("/health", (_req, res) => {
     service: "gener8server",
     supabase: isSupabaseConfigured(),
     videoProvider: env.videoProvider,
+    wan: Boolean(env.wanApiKey),
     fal: Boolean(env.falKey),
     wavespeed: Boolean(env.wavespeedApiKey),
     openrouter: Boolean(env.openrouterApiKey),

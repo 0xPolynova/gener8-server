@@ -109,6 +109,15 @@ generateRouter.post(
         typeof req.body?.lastFrameImage === "string"
           ? req.body.lastFrameImage
           : null,
+      omniAssets: Array.isArray(req.body?.omniAssets)
+        ? req.body.omniAssets.filter(
+            (a: unknown): a is { type: "image" | "video" | "audio"; url: string } =>
+              typeof a === "object" &&
+              a !== null &&
+              typeof (a as Record<string, unknown>).url === "string" &&
+              ["image", "video", "audio"].includes((a as Record<string, unknown>).type as string),
+          )
+        : [],
     };
     if (createInput.referenceVideoUrl) {
       createInput.firstFrameImage = null;

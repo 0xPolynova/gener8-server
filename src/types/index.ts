@@ -75,7 +75,7 @@ export interface Video {
   poster: PosterPalette;
   model: string;
   aspectRatio: AspectRatio;
-  duration: VideoDuration;
+  duration: number;
   quality: VideoQuality;
   status: GenerationStatus;
   visibility: Visibility;

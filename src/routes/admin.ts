@@ -79,7 +79,8 @@ adminRouter.post(
     if (!session || !isAdminWallet(session.walletAddress)) {
       throw new AppError(ERROR_CODES.FORBIDDEN, 403, "This page is not available.");
     }
-    const action = req.body?.action === "approve" ? "approved" : req.body?.action === "deny" ? "denied" : null;
+    const action: "approved" | "denied" | null =
+      req.body?.action === "approve" ? "approved" : req.body?.action === "deny" ? "denied" : null;
     if (!action) throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Choose approve or deny.");
     const rows = await readKolLibrary();
     const next = rows.map((kol) => (kol.id === req.params.id ? { ...kol, status: action } : kol));

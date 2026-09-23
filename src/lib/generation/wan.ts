@@ -118,12 +118,13 @@ async function materialize(url: string, kind: "image" | "video") {
 }
 
 function probeDuration(file: string): Promise<number | null> {
-  if (!ffmpegPath || /^https?:\/\//.test(file)) return Promise.resolve(null);
+  const bin = ffmpegPath;
+  if (!bin || /^https?:\/\//.test(file)) return Promise.resolve(null);
   return new Promise((resolve) => {
-    const child = spawn(ffmpegPath, ["-i", file], { windowsHide: true });
+    const child = spawn(bin, ["-i", file], { windowsHide: true });
     let stderr = "";
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => {
+    child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.on("error", () => resolve(null));

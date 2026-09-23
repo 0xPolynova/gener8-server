@@ -112,6 +112,16 @@ function creatorPreview(creator: User) {
   };
 }
 
+function playableDiscoverUrl(url: string | null | undefined) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname;
+    return host !== "localhost" && host !== "127.0.0.1" && host !== "::1";
+  } catch {
+    return false;
+  }
+}
+
 function mapVideo(row: VideoRow): Video {
   return {
     id: row.id,
@@ -400,7 +410,9 @@ export async function sbListDiscover(
 
   const { data, error } = await query;
   if (error) throw error;
-  let list = (data as VideoRow[]).map(mapVideo);
+  let list = (data as VideoRow[])
+    .map(mapVideo)
+    .filter((video) => playableDiscoverUrl(video.videoUrl));
 
   if (filter === "latest") {
     list.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -455,13 +467,14 @@ export async function sbListPublicByUsername(
 ) {
   const user = await sbGetUserByUsername(sb, username);
   if (!user) return { user: null, videos: [] as VideoWithCreator[] };
-  const { data, error } = await sb
+  let query = sb
     .from("videos")
     .select("*")
     .eq("user_id", user.id)
-    .eq("visibility", "public")
     .eq("status", "complete")
     .order("created_at", { ascending: false });
+  if (viewerId !== user.id) query = query.eq("visibility", "public");
+  const { data, error } = await query;
   if (error) throw error;
   const videos = await Promise.all(
     (data as VideoRow[]).map((row) => withCreator(sb, mapVideo(row), viewerId)),

@@ -162,6 +162,8 @@ export interface TokenTier {
   id: number;
   name: string;
   minimumBalance: number;
+  /** Null means no hourly cap. */
+  hourlyGenerations: number | null;
   dailyGenerations: number;
   models: string[];
   label: string;

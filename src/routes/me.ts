@@ -8,7 +8,7 @@ import {
 } from "@/lib/auth/session";
 import { db } from "@/lib/data/repository";
 import { AppError, ERROR_CODES } from "@/lib/errors";
-import { syncUserJobs } from "@/lib/generation/sync";
+import { kickSync } from "@/lib/generation/sync";
 import { assertUsername, assertXHandle } from "@/lib/profile";
 import type { CreationsTab } from "@/types";
 import { asyncHandler } from "@/middleware/async";
@@ -25,7 +25,7 @@ meRouter.get(
     const session = await getSession(req);
     if (!session) throw new AppError(ERROR_CODES.UNAUTHENTICATED, 401);
     const tab = (String(req.query.tab ?? "all") || "all") as CreationsTab;
-    await syncUserJobs(session.userId);
+    kickSync(session.userId);
     const videos = await db.listUserVideos(session.userId, tab);
     const hydrated = await Promise.all(
       videos.map((v) => db.getVideo(v.id, session.userId)),

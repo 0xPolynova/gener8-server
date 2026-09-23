@@ -11,6 +11,16 @@ import type {
 import { seedFollows, seedUsers, seedVideos } from "./seed";
 import { nanoid } from "@/lib/utils";
 
+function playableDiscoverUrl(url: string | null | undefined) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname;
+    return host !== "localhost" && host !== "127.0.0.1" && host !== "::1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * In-memory data layer used when Supabase is not configured.
  * Swap call sites in `repository.ts` to the Supabase implementation
@@ -31,6 +41,38 @@ class MemoryStore {
 
   getUser(id: string) {
     return this.users.find((u) => u.id === id) ?? null;
+  }
+
+  /** Wallet sessions survive a restart; the in-memory user list does not. */
+  rememberSessionUser(session: {
+    userId: string;
+    username: string;
+    displayName: string;
+    walletAddress: string;
+  }) {
+    const existing = this.getUser(session.userId);
+    if (existing) return existing;
+    const user: User = {
+      id: session.userId,
+      username: session.username,
+      displayName: session.displayName,
+      bio: "",
+      avatarPalette: {
+        from: "#0a0a0a",
+        via: "#1a1608",
+        to: "#3a3000",
+        accent: "#FBE418",
+      },
+      walletAddress: session.walletAddress,
+      followerCount: 0,
+      followingCount: 0,
+      profileComplete: false,
+      avatarUrl: null,
+      xHandle: null,
+      createdAt: new Date().toISOString(),
+    };
+    this.users.push(user);
+    return user;
   }
 
   getUserByUsername(username: string) {
@@ -101,7 +143,10 @@ class MemoryStore {
 
   listDiscover(filter: DiscoverFilter, viewerId?: string | null): VideoWithCreator[] {
     let list = this.videos.filter(
-      (v) => v.visibility === "public" && v.status === "complete",
+      (v) =>
+        v.visibility === "public" &&
+        v.status === "complete" &&
+        playableDiscoverUrl(v.videoUrl),
     );
 
     if (filter === "following" && viewerId) {
@@ -168,8 +213,8 @@ class MemoryStore {
       .filter(
         (v) =>
           v.userId === user.id &&
-          v.visibility === "public" &&
-          v.status === "complete",
+          v.status === "complete" &&
+          (viewerId === user.id || v.visibility === "public"),
       )
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
       .map((v) => this.withCreator(v, viewerId));

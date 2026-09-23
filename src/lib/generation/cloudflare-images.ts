@@ -4,7 +4,6 @@ import { env } from "@/lib/config/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 function imagesRoot() {
-  if (env.cfImagesApiToken.startsWith("cfut_")) return "https://batch.imagedelivery.net/images/v1";
   return `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1`;
 }
 
@@ -103,9 +102,7 @@ async function listKolStylesFromCdn(handle: string, cursor: string | null, limit
   const start = page;
   while (wanted.length < limit && more && page < start + 6) {
     const res = await fetch(
-      env.cfImagesApiToken.startsWith("cfut_")
-        ? `https://batch.imagedelivery.net/images/v2?page=${page}&per_page=${perPage}`
-        : `${imagesRoot()}?page=${page}&per_page=${perPage}`,
+      `${imagesRoot()}?page=${page}&per_page=${perPage}`,
       { headers: authHeaders() },
     );
     const data = (await res.json().catch(() => ({}))) as {

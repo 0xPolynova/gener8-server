@@ -14,9 +14,17 @@ const LEGACY_MODEL_IDS: Record<string, string> = {
   "gener8-fast": OPENROUTER_MODELS.fast,
   "gener8-pro": OPENROUTER_MODELS.pro,
   "gener8-cinematic": OPENROUTER_MODELS.cinematic,
+  "wan3.0-video": "wan3.0",
 };
 
 export const VIDEO_MODELS: VideoModel[] = [
+  {
+    id: "wan3.0",
+    name: "Wan 3.0",
+    description: "Wan 3.0 video through the Wan CLI.",
+    minTier: 1,
+    estimatedSeconds: 180,
+  },
   {
     id: "bytedance/seedance-2.0-fast",
     name: "Seedance 2.0 Fast",

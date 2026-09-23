@@ -5,13 +5,14 @@ import { db } from "@/lib/data/repository";
 import { AppError, ERROR_CODES } from "@/lib/errors";
 import { evaluateEligibility } from "@/lib/gating/evaluate";
 import { providerForGeneration } from "@/lib/generation";
+import { modelPrompt } from "@/lib/generation/baseline-prompt";
 import { syncGenerationJob } from "@/lib/generation/sync";
 import {
   MAX_PROMPT_LENGTH,
   MIN_PROMPT_LENGTH,
   resolveVideoModelId,
 } from "@/lib/config/models";
-import { titleFromPrompt, sanitizeTitle } from "@/lib/format";
+import { sanitizeTitle } from "@/lib/format";
 import { nanoid } from "@/lib/utils";
 import type { GenerationJob, GenerationSettings, PosterPalette, Video, Visibility } from "@/types";
 import { asyncHandler } from "@/middleware/async";
@@ -38,17 +39,21 @@ generateRouter.post(
   asyncHandler(async (req, res) => {
     const session = await getSession(req);
     if (!session) throw new AppError(ERROR_CODES.UNAUTHENTICATED, 401);
+    await db.rememberSessionUser(session);
 
     const prompt = String(req.body?.prompt ?? "").trim();
     const settings = req.body?.settings as GenerationSettings;
     const visibility: Visibility =
       req.body?.visibility === "public" ? "public" : "private";
-    const title = sanitizeTitle(req.body?.title, titleFromPrompt(prompt));
+    const title = sanitizeTitle(req.body?.title, "");
+    if (!title) {
+      throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Name the video first.");
+    }
 
     if (prompt.length < MIN_PROMPT_LENGTH) {
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400);
     }
-    if (prompt.length > MAX_PROMPT_LENGTH) {
+    if (modelPrompt(prompt).length > MAX_PROMPT_LENGTH) {
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Prompt is too long.");
     }
 
@@ -62,7 +67,12 @@ generateRouter.post(
       throw new AppError(ERROR_CODES.INSUFFICIENT_BALANCE, 403);
     }
     if (eligibility.state === "limit_reached") {
-      throw new AppError(ERROR_CODES.GENERATION_LIMIT, 429);
+      const cap = eligibility.dailyLimit ?? 1;
+      throw new AppError(
+        ERROR_CODES.GENERATION_LIMIT,
+        429,
+        `You can generate ${cap} video${cap === 1 ? "" : "s"} an hour at your GENER8 balance.`,
+      );
     }
     if (eligibility.state !== "eligible" || !eligibility.tier) {
       throw new AppError(ERROR_CODES.UNAUTHENTICATED, 401);
@@ -74,6 +84,30 @@ generateRouter.post(
     }
     recent.set(session.userId, Date.now());
 
+    const jobs = await db.listJobsForUser(session.userId);
+    const inFlight = jobs.some((job) =>
+      ["queued", "preparing", "generating", "processing"].includes(job.status),
+    );
+    if (inFlight) {
+      throw new AppError(
+        ERROR_CODES.RATE_LIMITED,
+        429,
+        "Wait until your current video finishes before starting another.",
+      );
+    }
+    const cap = eligibility.tier.hourlyGenerations;
+    if (cap != null) {
+      const hourAgo = Date.now() - 60 * 60 * 1000;
+      const startedThisHour = jobs.filter((job) => +new Date(job.createdAt) >= hourAgo).length;
+      if (startedThisHour >= cap) {
+        throw new AppError(
+          ERROR_CODES.GENERATION_LIMIT,
+          429,
+          `You can generate ${cap} video${cap === 1 ? "" : "s"} an hour at your GENER8 balance.`,
+        );
+      }
+    }
+
     const model = resolveVideoModelId(settings?.model);
     if (!eligibility.tier.models.includes(model.id) && eligibility.tier.id < model.minTier) {
       throw new AppError(
@@ -84,7 +118,7 @@ generateRouter.post(
     }
 
     const createInput = {
-      prompt,
+      prompt: modelPrompt(prompt),
       settings,
       userId: session.userId,
       referenceVideoUrl:
@@ -139,7 +173,7 @@ generateRouter.post(
       poster: paletteFromPrompt(prompt),
       model: createInput.referenceModel || model.id,
       aspectRatio: settings?.aspectRatio ?? "16:9",
-      duration: createInput.referenceVideoUrl ? 15 : (settings?.duration ?? 5),
+      duration: settings?.duration ?? 5,
       quality: settings?.quality ?? "standard",
       status: "preparing",
       visibility,
@@ -204,6 +238,7 @@ generateRouter.post(
     await db.updateVideo(videoId, {
       providerJobId: providerJob.id,
       status: providerJob.status,
+      ...(providerJob.duration ? { duration: providerJob.duration } : {}),
     });
     await db.incrementDaily(session.userId);
 

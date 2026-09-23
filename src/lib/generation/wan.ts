@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import { writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import ffmpegPath from "ffmpeg-static";
 import type {
   CreateGenerationInput,
   ProviderJob,
@@ -8,6 +12,8 @@ import type {
 } from "./provider";
 import { env } from "@/lib/config/env";
 import { AppError, ERROR_CODES } from "@/lib/errors";
+import { logger } from "@/lib/log";
+import { persistGeneratedClip } from "./persist";
 
 function cliEntry() {
   return path.join(process.cwd(), "node_modules", "@wan-ai", "cli", "dist", "index.js");
@@ -43,18 +49,125 @@ function runWan(args: string[]): Promise<unknown> {
         }
       }
       if (code !== 0) {
-        const message =
-          (parsed as { errorMsg?: string; message?: string } | null)?.errorMsg ||
-          (parsed as { message?: string } | null)?.message ||
-          stderr.trim() ||
-          text ||
-          `Wan CLI exited ${code}`;
+        const body = parsed as {
+          errorMsg?: string;
+          message?: string;
+          details?: { actual?: unknown };
+        } | null;
+        const actual = body?.details?.actual;
+        const message = [
+          body?.errorMsg || body?.message || stderr.trim() || text || `Wan CLI exited ${code}`,
+          actual ? JSON.stringify(actual) : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
         reject(new AppError(ERROR_CODES.GENERATION_FAILED, 502, message));
         return;
       }
       resolve(parsed);
     });
   });
+}
+
+const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+const VIDEO_EXTS = new Set([".mp4", ".mov"]);
+
+/** Wan's API cannot fetch loopback uploads, so pass the file on disk. */
+function localUpload(url: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") return null;
+  if (!parsed.pathname.startsWith("/uploads/")) return null;
+  const name = path.basename(parsed.pathname);
+  if (!name || name === "." || name === "..") return null;
+  const file = path.join(process.cwd(), "uploads", name);
+  return fs.existsSync(file) ? file : null;
+}
+
+function sniffExt(bytes: Buffer, kind: "image" | "video") {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) return ".jpg";
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return ".png";
+  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") return ".webp";
+  if (bytes.length >= 12 && bytes.toString("ascii", 4, 8) === "ftyp") return ".mp4";
+  return kind === "video" ? ".mp4" : ".jpg";
+}
+
+/**
+ * Wan rejects remote images whose URL has no extension (Cloudflare `/public`).
+ * Hand the CLI a local file it can measure itself.
+ */
+async function materialize(url: string, kind: "image" | "video") {
+  const local = localUpload(url);
+  const source = local ?? url;
+  const ext = path.extname(source.split(/[?#]/)[0] ?? "").toLowerCase();
+  const allowed = kind === "image" ? IMAGE_EXTS : VIDEO_EXTS;
+  if (!/^https?:\/\//.test(source) && allowed.has(ext)) return source;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, `Couldn't read the reference ${kind}.`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}${sniffExt(bytes, kind)}`);
+  await writeFile(file, bytes);
+  return file;
+}
+
+function probeDuration(file: string): Promise<number | null> {
+  if (!ffmpegPath || /^https?:\/\//.test(file)) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegPath, ["-i", file], { windowsHide: true });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", () => resolve(null));
+    child.on("close", () => {
+      const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      if (!match) {
+        resolve(null);
+        return;
+      }
+      const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+      resolve(Number.isFinite(seconds) ? seconds : null);
+    });
+  });
+}
+
+/**
+ * Measure each reference clip. Omni can use at most 15s of video,
+ * and the output length cannot exceed 30s minus that reference.
+ * A remix output matches the source clip, capped by those limits.
+ */
+async function referencePlan(files: string[]) {
+  const lengths: number[] = [];
+  for (const file of files) {
+    const duration = await probeDuration(file);
+    if (duration == null || duration < 1) return null;
+    const end = Math.min(15, Math.floor(duration * 10) / 10);
+    if (end < 1) return null;
+    lengths.push(end);
+  }
+  const reference = lengths.reduce((sum, seconds) => sum + seconds, 0);
+  const maxOut = Math.max(2, Math.floor(30 - reference));
+  const source = lengths[0];
+  let output = Math.round(source);
+  if (output > source + 0.05) output = Math.floor(source);
+  output = Math.min(maxOut, Math.max(2, output));
+  return {
+    ranges: lengths.map((end) => `0:${end}`).join(","),
+    duration: output,
+  };
+}
+
+function outputDuration(requested: number) {
+  const value = Number.isFinite(requested) ? Math.round(requested) : 5;
+  return Math.min(Math.max(value, 2), 30);
 }
 
 function mapLabel(label: string | undefined): ProviderJob["status"] {
@@ -70,15 +183,57 @@ function mapLabel(label: string | undefined): ProviderJob["status"] {
   }
 }
 
+type WanAsset = {
+  url?: string;
+  urlWithoutLogo?: string;
+  resizeUrlWithoutLogo?: string;
+  downloadUrl?: string;
+  downloadUrlWithLogo?: string;
+  videoFirstFrameUrl?: string;
+};
+
+function firstAsset(result: unknown): WanAsset | null {
+  const asset = Array.isArray(result) ? result[0] : result;
+  if (!asset || typeof asset !== "object") return null;
+  return asset as WanAsset;
+}
+
+/** Same choice as the Wan site’s download-without-watermark button. Never the logo file. */
+function cleanDownloadUrl(asset: WanAsset) {
+  const logo = asset.downloadUrlWithLogo;
+  const candidates = [asset.urlWithoutLogo, asset.resizeUrlWithoutLogo, asset.downloadUrl];
+  return candidates.find((url) => url && url !== logo) || asset.urlWithoutLogo || asset.downloadUrl || null;
+}
+
 export class WanProvider implements VideoGenerationProvider {
   readonly name = "wan";
 
   async createGeneration(input: CreateGenerationInput): Promise<ProviderJob> {
     const settings = input.settings ?? {};
-    const duration = typeof settings.duration === "number" ? settings.duration : 15;
     const ratio = settings.aspectRatio || "16:9";
+    const images = await Promise.all(
+      [
+        ...(input.referenceImages ?? []),
+        ...(input.omniAssets ?? []).filter((asset) => asset.type === "image").map((asset) => asset.url),
+      ].map((url) => materialize(url, "image")),
+    );
+    const videos = await Promise.all(
+      [
+        ...(input.referenceVideoUrl ? [input.referenceVideoUrl] : []),
+        ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
+      ].map((url) => materialize(url, "video")),
+    );
+    const plan = videos.length ? await referencePlan(videos) : null;
+    const duration = plan?.duration ?? outputDuration(
+      typeof settings.duration === "number" ? settings.duration : 15,
+    );
+    if (plan) {
+      logger.info("remix duration", { seconds: duration, ranges: plan.ranges });
+    }
     const args = [
       "omni2video",
+      "--model",
+      "wan3.0",
       "--prompt",
       input.prompt,
       "--duration",
@@ -88,22 +243,15 @@ export class WanProvider implements VideoGenerationProvider {
       "--ratio",
       ratio,
     ];
-    const images = [
-      ...(input.referenceImages ?? []),
-      ...(input.omniAssets ?? []).filter((asset) => asset.type === "image").map((asset) => asset.url),
-    ];
-    const videos = [
-      ...(input.referenceVideoUrl ? [input.referenceVideoUrl] : []),
-      ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
-    ];
     if (images.length) args.push("--images", images.join(","));
     if (videos.length) args.push("--videos", videos.join(","));
+    if (plan) args.push("--video-ranges", plan.ranges);
 
     const data = (await runWan(args)) as { taskId?: string };
     if (!data?.taskId) {
       throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Wan CLI did not return a task id.");
     }
-    return { id: data.taskId, status: "queued", progress: 0 };
+    return { id: data.taskId, status: "queued", progress: 0, duration };
   }
 
   async getGenerationStatus(providerJobId: string): Promise<ProviderJob> {
@@ -123,12 +271,26 @@ export class WanProvider implements VideoGenerationProvider {
   async getResult(providerJobId: string): Promise<ProviderResult | null> {
     const data = (await runWan(["result", "get", providerJobId])) as {
       statusLabel?: string;
-      result?: { videoUrl?: string; url?: string; resourceUrl?: string };
+      result?: unknown;
     };
     if (data.statusLabel !== "succeeded") return null;
-    const videoUrl = data.result?.videoUrl || data.result?.url || data.result?.resourceUrl;
-    if (!videoUrl) return null;
-    return { videoUrl, thumbnailUrl: null };
+    const asset = firstAsset(data.result) ?? {};
+    const remoteUrl = cleanDownloadUrl(asset);
+    logger.info("wan download", {
+      providerJobId,
+      clean: Boolean(asset.urlWithoutLogo || (asset.downloadUrl && asset.downloadUrl !== asset.downloadUrlWithLogo)),
+    });
+    if (!remoteUrl) return null;
+    const download = await fetch(remoteUrl);
+    if (!download.ok) {
+      throw new AppError(
+        ERROR_CODES.GENERATION_FAILED,
+        502,
+        `Couldn't download the finished video (${download.status}).`,
+      );
+    }
+    const hosted = await persistGeneratedClip(providerJobId, Buffer.from(await download.arrayBuffer()));
+    return hosted;
   }
 }
 

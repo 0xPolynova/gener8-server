@@ -119,6 +119,17 @@ export const db = {
     return store.upsertUserFromWallet(address);
   },
 
+  async rememberSessionUser(session: {
+    userId: string;
+    username: string;
+    displayName: string;
+    walletAddress: string;
+  }) {
+    const client = await admin();
+    if (client) return null;
+    return store.rememberSessionUser(session);
+  },
+
   async createVideo(video: Video) {
     const client = await admin();
     if (client) return sb.sbCreateVideo(client, video);

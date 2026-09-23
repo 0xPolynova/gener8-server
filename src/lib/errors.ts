@@ -26,7 +26,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   WALLET_DISCONNECTED: "Connect a Solana wallet to continue.",
   UNAUTHENTICATED: "Connect your wallet to continue.",
   SESSION_EXPIRED: "Your session expired. Please connect again.",
-  INSUFFICIENT_BALANCE: "You need more GENER8 to unlock generation.",
+  INSUFFICIENT_BALANCE: "Hold at least 50,000 GENER8 in your connected wallet to generate.",
   GENERATION_LIMIT: "You’ve reached today’s generation limit. Come back tomorrow.",
   RPC_FAILURE: "We couldn’t reach the Solana network. Try again in a moment.",
   PROVIDER_TIMEOUT: "Generation took too long. Please try again.",

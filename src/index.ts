@@ -5,8 +5,10 @@ import express from "express";
 import { env, isProd, isSupabaseConfigured } from "@/lib/config/env";
 import { AppError, sendError } from "@/lib/errors";
 import { logger, serializeError } from "@/lib/log";
+import { adminRouter } from "@/routes/admin";
 import { authRouter } from "@/routes/auth";
 import { generateRouter } from "@/routes/generate";
+import { kolsRouter } from "@/routes/kols";
 import { meRouter } from "@/routes/me";
 import { refsRouter } from "@/routes/refs";
 import { stylesRouter } from "@/routes/styles";
@@ -55,6 +57,8 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.use("/api/admin", adminRouter);
+app.use("/api/kols", kolsRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/token", tokenRouter);
 app.use("/api/generate", generateRouter);

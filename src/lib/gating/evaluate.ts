@@ -29,13 +29,12 @@ export async function evaluateEligibility(params: {
   if (isFullAccessUsername(username)) {
     const balance = await getGener8Balance(params.session.walletAddress);
     const tier = fullAccessTier();
-    const used = await db.getDailyCount(params.session.userId);
     return {
       state: "eligible",
       balance,
       required,
-      remainingToday: Math.max(0, tier.dailyGenerations - used),
-      dailyLimit: tier.dailyGenerations,
+      remainingToday: null,
+      dailyLimit: null,
       tier,
     };
   }
@@ -49,23 +48,30 @@ export async function evaluateEligibility(params: {
       balance,
       required,
       remainingToday: 0,
-      dailyLimit: TOKEN_GATING.tiers[0].dailyGenerations,
+      dailyLimit: TOKEN_GATING.tiers[0].hourlyGenerations,
       tier: null,
     };
   }
 
-  const used = await db.getDailyCount(params.session.userId);
-  const remaining = Math.max(0, tier.dailyGenerations - used);
-  const state: GatingState = remaining <= 0 ? "limit_reached" : "eligible";
+  const started = await generationsThisHour(params.session.userId);
+  const cap = tier.hourlyGenerations;
+  const remaining = cap == null ? null : Math.max(0, cap - started);
+  const state: GatingState = remaining === 0 ? "limit_reached" : "eligible";
 
   return {
     state,
     balance,
     required,
     remainingToday: remaining,
-    dailyLimit: tier.dailyGenerations,
+    dailyLimit: cap,
     tier,
   };
+}
+
+async function generationsThisHour(userId: string) {
+  const jobs = await db.listJobsForUser(userId);
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  return jobs.filter((job) => +new Date(job.createdAt) >= hourAgo).length;
 }
 
 function empty(state: GatingState, required: number): Eligibility {
@@ -74,7 +80,7 @@ function empty(state: GatingState, required: number): Eligibility {
     balance: null,
     required,
     remainingToday: null,
-    dailyLimit: TOKEN_GATING.tiers[0].dailyGenerations,
+    dailyLimit: TOKEN_GATING.tiers[0].hourlyGenerations,
     tier: null,
   };
 }

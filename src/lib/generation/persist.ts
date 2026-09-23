@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { env } from "@/lib/config/env";
 import { db } from "@/lib/data/repository";
+import { uploadStreamVideo } from "./cloudflare-stream";
 import { extractPosterAndFaststart } from "./media-poster";
 
 export async function persistPublicFile(key: string, buffer: Buffer) {
@@ -32,6 +33,13 @@ export async function persistGeneratedClip(jobId: string, buffer: Buffer) {
     thumb = prepared.thumbnail;
   } catch {
     /* keep the original bytes if ffmpeg can’t remux this file */
+  }
+  const streamed = await uploadStreamVideo(video, `${jobId}.mp4`);
+  if (streamed) {
+    return {
+      videoUrl: streamed.videoUrl,
+      thumbnailUrl: streamed.thumbnailUrl ?? (thumb ? await persistPublicFile(`${jobId}.jpg`, thumb) : null),
+    };
   }
   const videoUrl = await persistPublicFile(`${jobId}.mp4`, video);
   const thumbnailUrl = thumb

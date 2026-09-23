@@ -28,6 +28,7 @@ export interface ProviderJob {
   status: GenerationStatus;
   progress: number;
   error?: string;
+  duration?: number;
 }
 
 export interface ProviderResult {

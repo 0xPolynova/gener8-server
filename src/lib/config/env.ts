@@ -138,6 +138,7 @@ export const env = {
     "google/gemini-3.1-flash-lite-image",
   ),
   cfAccountId: read("CF_ACCOUNT_ID"),
+  cfStreamApiToken: read("CF_STREAM_API_TOKEN"),
   cfImagesApiToken: read("CF_IMAGES_API_TOKEN"),
   cfImagesAccountHash: read("CF_IMAGES_ACCOUNT_HASH", "evSvvg4gSrZmei5DvWV8Aw"),
   openrouterBaseUrl: read(
@@ -159,6 +160,7 @@ export const env = {
   demoTokenBalance: readNumber("DEMO_TOKEN_BALANCE", 25000),
 
   wanApiKey: read("WAN_API_KEY"),
+  wanWorkspaceId: read("WAN_WORKSPACE_ID"),
   wanRegion: read("WAN_REGION", "ap-southeast-1"),
 };
 

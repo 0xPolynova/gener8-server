@@ -55,6 +55,11 @@ export async function syncGenerationJob(job: GenerationJob) {
       await db.updateVideo(job.videoId, { status: "generating" });
       return updated;
     }
+    logger.info("generation saved", {
+      jobId: job.id,
+      videoId: job.videoId,
+      provider: job.provider,
+    });
     const updated = await db.updateJob(job.id, {
       status: "complete",
       progress: 100,
@@ -74,6 +79,15 @@ export async function syncGenerationJob(job: GenerationJob) {
   });
   await db.updateVideo(job.videoId, { status: status.status });
   return updated;
+}
+
+const syncingUsers = new Set<string>();
+
+/** Poll Wan without making the creations list wait on the CLI. */
+export function kickSync(userId: string) {
+  if (syncingUsers.has(userId)) return;
+  syncingUsers.add(userId);
+  void syncUserJobs(userId).finally(() => syncingUsers.delete(userId));
 }
 
 export async function syncUserJobs(userId: string) {

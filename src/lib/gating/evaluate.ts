@@ -1,4 +1,5 @@
 import type { Eligibility, GatingState, Session } from "@/types";
+import { isAdminWallet } from "@/lib/admin";
 import {
   fullAccessTier,
   isFullAccessUsername,
@@ -26,6 +27,18 @@ export async function evaluateEligibility(params: {
 
   const account = await db.getUser(params.session.userId);
   const username = account?.username ?? params.session.username;
+  const wallet = params.walletAddress ?? params.session.walletAddress;
+  if (isAdminWallet(wallet)) {
+    return {
+      state: "eligible",
+      balance: null,
+      required,
+      remainingToday: null,
+      dailyLimit: null,
+      tier: fullAccessTier(),
+    };
+  }
+
   if (isFullAccessUsername(username)) {
     const balance = await getGener8Balance(params.session.walletAddress);
     const tier = fullAccessTier();

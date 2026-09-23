@@ -78,6 +78,7 @@ export const env = {
   supabaseServiceRoleKey: read("SUPABASE_SERVICE_ROLE_KEY"),
 
   solanaRpc: read("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
+  heliusApiKey: read("HELIUS_API_KEY"),
   tokenMint: read("GENER8_TOKEN_MINT"),
   tokenDecimals: readNumber("GENER8_TOKEN_DECIMALS", 9),
   tokenSymbol: read("GENER8_TOKEN_SYMBOL", "GENER8"),

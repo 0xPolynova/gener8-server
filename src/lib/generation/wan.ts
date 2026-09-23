@@ -113,6 +113,15 @@ function streamSource(url: string) {
   return uid ? `${parsed.origin}/${uid}/manifest/video.m3u8` : url;
 }
 
+function ffmpegFailure(stderr: string) {
+  const line = stderr
+    .split("\n")
+    .map((item) => item.trim())
+    .reverse()
+    .find((item) => /error|invalid|http|404|403|fail/i.test(item) && !item.startsWith("--enable"));
+  return line?.slice(0, 240) || "Couldn't read the reference video.";
+}
+
 function runFfmpeg(args: string[]) {
   const bin = ffmpegPath;
   if (!bin) {
@@ -127,20 +136,23 @@ function runFfmpeg(args: string[]) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(stderr.slice(-800) || "ffmpeg"));
+      else reject(new AppError(ERROR_CODES.GENERATION_FAILED, 502, ffmpegFailure(stderr)));
     });
   });
 }
 
-/** Save a normal MP4 Wan can time. Stream copies often have no duration metadata. */
+/** CDN MP4 when Cloudflare has one. Otherwise copy the stream into a file, without re-encoding. */
 async function wanReferenceFile(url: string) {
   const parsed = new URL(url);
   const uid = parsed.pathname.split("/").filter(Boolean)[0];
-  const mp4 = uid ? `${parsed.origin}/${uid}/downloads/default.mp4` : "";
-  let source = streamSource(url);
+  const mp4 = !uid
+    ? ""
+    : parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")
+      ? url
+      : `${parsed.origin}/${uid}/downloads/default.mp4`;
   if (mp4) {
     const head = await fetch(mp4, { method: "HEAD" });
-    if (head.ok) source = mp4;
+    if (head.ok) return mp4;
   }
   const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`);
   await runFfmpeg([
@@ -148,15 +160,9 @@ async function wanReferenceFile(url: string) {
     "-t",
     "30",
     "-i",
-    source,
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "20",
-    "-c:a",
-    "aac",
+    streamSource(url),
+    "-c",
+    "copy",
     "-movflags",
     "+faststart",
     file,

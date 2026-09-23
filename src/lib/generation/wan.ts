@@ -247,7 +247,9 @@ async function referencePlan(files: string[]) {
       );
     }
     if (duration == null) return null;
-    const end = Math.min(30, Math.floor(duration * 10) / 10);
+    // ffmpeg's container length is slightly longer than the duration Wan stores.
+    // 12.10 was sent as 12.1 and rejected: "Trim end time cannot exceed original duration".
+    const end = Math.min(30, Math.floor((duration - 0.1) * 10) / 10);
     if (end < 1) return null;
     ends.push(end);
   }

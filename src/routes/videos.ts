@@ -2,6 +2,7 @@ import { Router } from "express";
 import { getSession } from "@/lib/auth/session";
 import { db } from "@/lib/data/repository";
 import { AppError, ERROR_CODES } from "@/lib/errors";
+import { brandDownload } from "@/lib/generation/brand-download";
 import type { DiscoverFilter, Video } from "@/types";
 import { asyncHandler } from "@/middleware/async";
 
@@ -31,6 +32,23 @@ videosRouter.put(
     }
     await db.reorderDiscover(ids);
     res.json({ ok: true });
+  }),
+);
+
+videosRouter.get(
+  "/:id/download",
+  asyncHandler(async (req, res) => {
+    const session = await getSession(req);
+    const video = await db.getVideo(req.params.id, session?.userId);
+    if (!video?.videoUrl) throw new AppError(ERROR_CODES.NOT_FOUND, 404);
+    if (video.visibility === "private" && video.userId !== session?.userId) {
+      throw new AppError(ERROR_CODES.NOT_FOUND, 404);
+    }
+    const file = await brandDownload(video.videoUrl);
+    const name = (video.title || "gener8").replace(/[^\w\- ]+/g, "").trim() || "gener8";
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", `attachment; filename="${name}.mp4"`);
+    res.send(file);
   }),
 );
 

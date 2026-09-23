@@ -96,43 +96,46 @@ function sniffExt(bytes: Buffer, kind: "image" | "video") {
   return kind === "video" ? ".mp4" : ".jpg";
 }
 
+function isStreamUrl(url: string) {
+  try {
+    const host = new URL(url).hostname;
+    return host.endsWith("cloudflarestream.com") || host.endsWith("videodelivery.net");
+  } catch {
+    return false;
+  }
+}
+
+/** Public MP4 on our Cloudflare Stream CDN. Wan fetches this URL itself. */
+async function cloudflareMp4Url(url: string) {
+  const parsed = new URL(url);
+  if (!isStreamUrl(url)) return null;
+  const uid = parsed.pathname.split("/").filter(Boolean)[0];
+  if (!uid) return null;
+  const mp4 = parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")
+    ? url
+    : `${parsed.origin}/${uid}/downloads/default.mp4`;
+  const head = await fetch(mp4, { method: "HEAD" });
+  if (head.ok) return mp4;
+  if (env.cfStreamApiToken && env.cfAccountId) {
+    await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/stream/${uid}/downloads`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.cfStreamApiToken}` } },
+    );
+    const again = await fetch(mp4, { method: "HEAD" });
+    if (again.ok) return mp4;
+  }
+  throw new AppError(
+    ERROR_CODES.GENERATION_FAILED,
+    502,
+    "Wan needs the CDN MP4 for this video, and Cloudflare has not published that file yet.",
+  );
+}
+
 /**
  * Wan rejects remote images whose URL has no extension (Cloudflare `/public`).
  * Hand the CLI a local file it can measure itself.
  */
-async function cloudflareFile(url: string) {
-  try {
-    const parsed = new URL(url);
-    const stream =
-      parsed.hostname.endsWith("cloudflarestream.com") || parsed.hostname.endsWith("videodelivery.net");
-    if (!stream) return url;
-    if (parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")) return url;
-    if (!parsed.pathname.includes("/manifest/") && !parsed.pathname.endsWith(".m3u8")) return url;
-    const uid = parsed.pathname.split("/").filter(Boolean)[0];
-    if (!uid) return url;
-    const mp4 = `${parsed.origin}/${uid}/downloads/default.mp4`;
-    const head = await fetch(mp4, { method: "HEAD" });
-    if (head.ok) return mp4;
-    const bin = ffmpegPath;
-    if (!bin) return url;
-    const file = path.join(os.tmpdir(), `gener8-${Date.now()}-stream.mp4`);
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, ["-y", "-i", url, "-c", "copy", "-movflags", "+faststart", file], { windowsHide: true });
-      child.on("error", reject);
-      child.on("close", (code) => (code === 0 ? resolve() : reject(new Error("ffmpeg"))));
-    });
-    return file;
-  } catch {
-    return url;
-  }
-}
-
 async function materialize(url: string, kind: "image" | "video") {
-  if (kind === "video") {
-    const resolved = await cloudflareFile(url);
-    if (resolved !== url && !resolved.startsWith("http")) return resolved;
-    if (resolved !== url) url = resolved;
-  }
   const local = localUpload(url);
   const source = local ?? url;
   const ext = path.extname(source.split(/[?#]/)[0] ?? "").toLowerCase();
@@ -151,7 +154,7 @@ async function materialize(url: string, kind: "image" | "video") {
 
 function probeDuration(file: string): Promise<number | null> {
   const bin = ffmpegPath;
-  if (!bin || /^https?:\/\//.test(file)) return Promise.resolve(null);
+  if (!bin) return Promise.resolve(null);
   return new Promise((resolve) => {
     const child = spawn(bin, ["-i", file], { windowsHide: true });
     let stderr = "";
@@ -261,7 +264,18 @@ export class WanProvider implements VideoGenerationProvider {
       [
         ...(input.referenceVideoUrl ? [input.referenceVideoUrl] : []),
         ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
-      ].map((url) => materialize(url, "video")),
+      ].map(async (url) => {
+        if (!isStreamUrl(url)) return materialize(url, "video");
+        const cdn = await cloudflareMp4Url(url);
+        if (!cdn) {
+          throw new AppError(
+            ERROR_CODES.GENERATION_FAILED,
+            502,
+            "Wan needs the CDN MP4 for this video, and Cloudflare has not published that file yet.",
+          );
+        }
+        return cdn;
+      }),
     );
     const plan = videos.length ? await referencePlan(videos) : null;
     const requested = typeof settings.duration === "number" ? settings.duration : 15;

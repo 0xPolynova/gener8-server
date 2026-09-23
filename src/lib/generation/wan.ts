@@ -105,23 +105,21 @@ function isStreamUrl(url: string) {
   }
 }
 
-function streamManifest(url: string) {
+function streamSource(url: string) {
   const parsed = new URL(url);
-  if (parsed.pathname.includes("/manifest/") || parsed.pathname.endsWith(".m3u8")) return url;
   const uid = parsed.pathname.split("/").filter(Boolean)[0];
+  if (parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")) return url;
+  if (parsed.pathname.includes("/manifest/") || parsed.pathname.endsWith(".m3u8")) return url;
   return uid ? `${parsed.origin}/${uid}/manifest/video.m3u8` : url;
 }
 
-async function remuxStream(url: string) {
+function runFfmpeg(args: string[]) {
   const bin = ffmpegPath;
   if (!bin) {
-    throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Couldn't read the reference video.");
+    return Promise.reject(new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Couldn't read the reference video."));
   }
-  const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, ["-y", "-i", url, "-c", "copy", "-movflags", "+faststart", file], {
-      windowsHide: true,
-    });
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(bin, args, { windowsHide: true });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
@@ -129,24 +127,41 @@ async function remuxStream(url: string) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(stderr.slice(-500) || "ffmpeg"));
+      else reject(new Error(stderr.slice(-800) || "ffmpeg"));
     });
   });
-  return file;
 }
 
-/** MP4 on our CDN when Cloudflare has published one, otherwise the stream saved to a file. */
-async function cloudflareMp4Url(url: string) {
+/** Save a normal MP4 Wan can time. Stream copies often have no duration metadata. */
+async function wanReferenceFile(url: string) {
   const parsed = new URL(url);
-  if (!isStreamUrl(url)) return null;
   const uid = parsed.pathname.split("/").filter(Boolean)[0];
-  if (!uid) return null;
-  const mp4 = parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")
-    ? url
-    : `${parsed.origin}/${uid}/downloads/default.mp4`;
-  const head = await fetch(mp4, { method: "HEAD" });
-  if (head.ok) return mp4;
-  return remuxStream(streamManifest(url));
+  const mp4 = uid ? `${parsed.origin}/${uid}/downloads/default.mp4` : "";
+  let source = streamSource(url);
+  if (mp4) {
+    const head = await fetch(mp4, { method: "HEAD" });
+    if (head.ok) source = mp4;
+  }
+  const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`);
+  await runFfmpeg([
+    "-y",
+    "-t",
+    "15",
+    "-i",
+    source,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "20",
+    "-c:a",
+    "aac",
+    "-movflags",
+    "+faststart",
+    file,
+  ]);
+  return file;
 }
 
 /**
@@ -274,9 +289,7 @@ export class WanProvider implements VideoGenerationProvider {
         ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
       ].map(async (url) => {
         if (!isStreamUrl(url)) return materialize(url, "video");
-        const cdn = await cloudflareMp4Url(url);
-        if (!cdn) return materialize(url, "video");
-        return cdn;
+        return wanReferenceFile(url);
       }),
     );
     const plan = videos.length ? await referencePlan(videos) : null;

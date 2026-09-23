@@ -156,20 +156,10 @@ class MemoryStore {
       list = list.filter((v) => followingIds.includes(v.userId));
     } else if (filter === "following") {
       list = [];
-    } else if (filter === "latest") {
+    } else if (filter === "latest" || filter === "trending") {
       list = [...list].sort(
         (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
       );
-    } else if (filter === "trending") {
-      list = [...list].sort((a, b) => {
-        const aHas = typeof a.sortOrder === "number";
-        const bHas = typeof b.sortOrder === "number";
-        if (aHas && bHas && a.sortOrder !== b.sortOrder) {
-          return (a.sortOrder as number) - (b.sortOrder as number);
-        }
-        if (aHas !== bHas) return aHas ? -1 : 1;
-        return b.likes + b.views / 8 - (a.likes + a.views / 8);
-      });
     } else if (filter === "viral") {
       list = [...list].sort((a, b) => b.views - a.views || b.likes - a.likes);
     } else if (filter === "15s" || filter === "30s") {

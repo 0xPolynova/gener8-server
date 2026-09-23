@@ -7,7 +7,7 @@ import { isAdminWallet } from "@/lib/admin";
 import { readKolLibrary, writeKolLibrary } from "@/lib/kol-library";
 import { db } from "@/lib/data/repository";
 import { AppError, ERROR_CODES } from "@/lib/errors";
-import { sanitizeTitle, titleFromPrompt } from "@/lib/format";
+import { sanitizeTitle } from "@/lib/format";
 import { persistGeneratedClip } from "@/lib/generation/persist";
 import { nanoid } from "@/lib/utils";
 import { asyncHandler } from "@/middleware/async";
@@ -113,6 +113,10 @@ adminRouter.post(
       throw new AppError(ERROR_CODES.UPLOAD_FAILED, 400, "Add a video file.");
     }
     const prompt = String(req.body?.prompt ?? "").trim();
+    const title = sanitizeTitle(req.body?.title, "");
+    if (!title) {
+      throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Name the video first.");
+    }
     if (prompt.length < 8) {
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Write the remix prompt.");
     }
@@ -132,7 +136,7 @@ adminRouter.post(
       userId: session.userId,
       prompt,
       publicPrompt: true,
-      title: sanitizeTitle(req.body?.title, titleFromPrompt(prompt)),
+      title,
       videoUrl: clip.videoUrl,
       thumbnailUrl: clip.thumbnailUrl,
       poster: { from: "#050505", via: "#16120a", to: "#2a2208", accent: "#FBE418" },

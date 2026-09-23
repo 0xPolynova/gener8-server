@@ -414,12 +414,8 @@ export async function sbListDiscover(
     .map(mapVideo)
     .filter((video) => playableDiscoverUrl(video.videoUrl));
 
-  if (filter === "latest") {
+  if (filter === "latest" || filter === "trending") {
     list.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  } else if (filter === "trending") {
-    const custom = await loadDiscoverOrder(sb);
-    if (custom?.length) list = orderByIds(list, custom);
-    else sortByDiscoverOrder(list);
   } else if (filter === "following") {
     list.sort((a, b) => b.likes + b.views / 8 - (a.likes + a.views / 8));
   } else if (filter === "viral") {

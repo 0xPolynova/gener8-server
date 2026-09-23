@@ -66,6 +66,8 @@ export const env = {
   corsOrigins: readList("CORS_ORIGINS", [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://gener8.fun",
+    "https://www.gener8.fun",
   ]),
   sessionSecret: read("SESSION_SECRET", "gener8-dev-session-secret-change-me"),
 

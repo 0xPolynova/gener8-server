@@ -28,7 +28,12 @@ app.use(
       }
       try {
         const host = new URL(origin).hostname;
-        if (host === "localhost" || host === "127.0.0.1") {
+        if (
+          host === "localhost" ||
+          host === "127.0.0.1" ||
+          host === "gener8.fun" ||
+          host === "www.gener8.fun"
+        ) {
           return callback(null, true);
         }
       } catch {

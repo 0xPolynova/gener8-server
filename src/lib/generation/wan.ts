@@ -179,6 +179,16 @@ async function wanReferenceFile(url: string) {
 }
 
 /**
+ * Wan reads a local file itself. A remote URL is measured by their servers,
+ * which cannot read the Bunny MP4 and fail with "unable to read Omni video duration".
+ */
+async function localReference(url: string) {
+  const source = isStreamUrl(url) && !isDirectMp4(url) ? await wanReferenceFile(url) : url;
+  if (!/^https?:\/\//.test(source)) return source;
+  return materialize(source, "video");
+}
+
+/**
  * Wan rejects remote images whose URL has no extension (Cloudflare `/public`).
  * Hand the CLI a local file it can measure itself.
  */
@@ -300,11 +310,7 @@ export class WanProvider implements VideoGenerationProvider {
       [
         ...(input.referenceVideoUrl ? [input.referenceVideoUrl] : []),
         ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
-      ].map(async (url) => {
-        if (isDirectMp4(url)) return url;
-        if (!isStreamUrl(url)) return materialize(url, "video");
-        return wanReferenceFile(url);
-      }),
+      ].map((url) => localReference(url)),
     );
     const plan = videos.length ? await referencePlan(videos) : null;
     const requested = typeof settings.duration === "number" ? settings.duration : 15;

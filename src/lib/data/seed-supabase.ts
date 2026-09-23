@@ -2,58 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { seedFollows, seedUsers, seedVideos } from "./seed";
 import { videoInsert } from "./supabase";
 
-async function upsertExampleFeed(sb: SupabaseClient) {
-  const creator = seedUsers.find((user) => user.id === "usr_examples");
-  const videos = seedVideos.filter((video) => video.provider === "cloudflare");
-  if (!creator || videos.length === 0) return;
-
-  const { data: existingUser, error: userLookupError } = await sb
-    .from("users")
-    .select("id")
-    .eq("id", creator.id)
-    .maybeSingle();
-  if (userLookupError) throw userLookupError;
-  if (!existingUser) {
-    const { error: userError } = await sb.from("users").insert({
-      id: creator.id,
-      username: creator.username,
-      display_name: creator.displayName,
-      bio: creator.bio,
-      avatar_palette: creator.avatarPalette,
-      avatar_url: creator.avatarUrl ?? null,
-      x_handle: creator.xHandle ?? null,
-      profile_complete: true,
-      follower_count: creator.followerCount,
-      following_count: creator.followingCount,
-      created_at: creator.createdAt,
-    });
-    if (userError) throw userError;
-  }
-
-  const { data: existingVideos, error: videoLookupError } = await sb
-    .from("videos")
-    .select("id")
-    .in(
-      "id",
-      videos.map((video) => video.id),
-    );
-  if (videoLookupError) throw videoLookupError;
-  const have = new Set((existingVideos ?? []).map((row) => row.id as string));
-  const missing = videos.filter((video) => !have.has(video.id));
-  if (missing.length) {
-    const { error: videoError } = await sb
-      .from("videos")
-      .insert(missing.map(videoInsert));
-    if (videoError) throw videoError;
-  }
-}
-
 export async function seedSupabase(sb: SupabaseClient) {
   const { count } = await sb
     .from("users")
     .select("id", { count: "exact", head: true });
   if ((count ?? 0) > 0) {
-    await upsertExampleFeed(sb);
     return { skipped: true, users: count ?? 0 };
   }
 
@@ -101,8 +54,6 @@ export async function seedSupabase(sb: SupabaseClient) {
     })),
   );
   if (followError) throw followError;
-
-  await upsertExampleFeed(sb);
 
   return {
     skipped: false,

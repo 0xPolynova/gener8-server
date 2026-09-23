@@ -55,6 +55,9 @@ function probe(buffer: Buffer): Promise<{ duration: number; aspectRatio: AspectR
       const duration = Math.min(30, Math.max(2, Math.round(seconds)));
       resolve({ duration, aspectRatio });
     });
+    child.stdin.on("error", () => {
+      /* ffmpeg closes stdin after the header; the leftover write is EPIPE */
+    });
     child.stdin.write(buffer);
     child.stdin.end();
   });

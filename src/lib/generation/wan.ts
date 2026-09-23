@@ -100,7 +100,39 @@ function sniffExt(bytes: Buffer, kind: "image" | "video") {
  * Wan rejects remote images whose URL has no extension (Cloudflare `/public`).
  * Hand the CLI a local file it can measure itself.
  */
+async function cloudflareFile(url: string) {
+  try {
+    const parsed = new URL(url);
+    const stream =
+      parsed.hostname.endsWith("cloudflarestream.com") || parsed.hostname.endsWith("videodelivery.net");
+    if (!stream) return url;
+    if (parsed.pathname.includes("/downloads/") && parsed.pathname.endsWith(".mp4")) return url;
+    if (!parsed.pathname.includes("/manifest/") && !parsed.pathname.endsWith(".m3u8")) return url;
+    const uid = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!uid) return url;
+    const mp4 = `${parsed.origin}/${uid}/downloads/default.mp4`;
+    const head = await fetch(mp4, { method: "HEAD" });
+    if (head.ok) return mp4;
+    const bin = ffmpegPath;
+    if (!bin) return url;
+    const file = path.join(os.tmpdir(), `gener8-${Date.now()}-stream.mp4`);
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(bin, ["-y", "-i", url, "-c", "copy", "-movflags", "+faststart", file], { windowsHide: true });
+      child.on("error", reject);
+      child.on("close", (code) => (code === 0 ? resolve() : reject(new Error("ffmpeg"))));
+    });
+    return file;
+  } catch {
+    return url;
+  }
+}
+
 async function materialize(url: string, kind: "image" | "video") {
+  if (kind === "video") {
+    const resolved = await cloudflareFile(url);
+    if (resolved !== url && !resolved.startsWith("http")) return resolved;
+    if (resolved !== url) url = resolved;
+  }
   const local = localUpload(url);
   const source = local ?? url;
   const ext = path.extname(source.split(/[?#]/)[0] ?? "").toLowerCase();
@@ -149,7 +181,14 @@ async function referencePlan(files: string[]) {
   const lengths: number[] = [];
   for (const file of files) {
     const duration = await probeDuration(file);
-    if (duration == null || duration < 1) return null;
+    if (duration != null && duration < 1) {
+      throw new AppError(
+        ERROR_CODES.GENERATION_FAILED,
+        502,
+        "That reference video on the CDN is shorter than a second, so Wan can't remix it.",
+      );
+    }
+    if (duration == null) return null;
     const end = Math.min(15, Math.floor(duration * 10) / 10);
     if (end < 1) return null;
     lengths.push(end);
@@ -225,9 +264,10 @@ export class WanProvider implements VideoGenerationProvider {
       ].map((url) => materialize(url, "video")),
     );
     const plan = videos.length ? await referencePlan(videos) : null;
-    const duration = plan?.duration ?? outputDuration(
-      typeof settings.duration === "number" ? settings.duration : 15,
-    );
+    const requested = typeof settings.duration === "number" ? settings.duration : 15;
+    const duration = plan?.duration ?? (videos.length
+      ? Math.min(outputDuration(requested), Math.max(2, Math.floor(30 - Math.min(15, requested))))
+      : outputDuration(requested));
     if (plan) {
       logger.info("remix duration", { seconds: duration, ranges: plan.ranges });
     }

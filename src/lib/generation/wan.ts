@@ -289,11 +289,15 @@ function firstAsset(result: unknown): WanAsset | null {
   return asset as WanAsset;
 }
 
-/** Same choice as the Wan site’s download-without-watermark button. Never the logo file. */
+function isVideoFile(url: string) {
+  return /\.(mp4|mov)(?:$|\?)/i.test(url.split("?")[0] ?? "");
+}
+
+/** Wan's `urlWithoutLogo` is the first-frame JPEG. The clean MP4 is `downloadUrl`. */
 function cleanDownloadUrl(asset: WanAsset) {
   const logo = asset.downloadUrlWithLogo;
-  const candidates = [asset.urlWithoutLogo, asset.resizeUrlWithoutLogo, asset.downloadUrl];
-  return candidates.find((url) => url && url !== logo) || asset.urlWithoutLogo || asset.downloadUrl || null;
+  const candidates = [asset.downloadUrl, asset.urlWithoutLogo, asset.resizeUrlWithoutLogo, asset.url];
+  return candidates.find((url) => url && url !== logo && isVideoFile(url)) || null;
 }
 
 export class WanProvider implements VideoGenerationProvider {

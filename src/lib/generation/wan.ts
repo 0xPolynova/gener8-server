@@ -105,7 +105,37 @@ function isStreamUrl(url: string) {
   }
 }
 
-/** Public MP4 on our Cloudflare Stream CDN. Wan fetches this URL itself. */
+function streamManifest(url: string) {
+  const parsed = new URL(url);
+  if (parsed.pathname.includes("/manifest/") || parsed.pathname.endsWith(".m3u8")) return url;
+  const uid = parsed.pathname.split("/").filter(Boolean)[0];
+  return uid ? `${parsed.origin}/${uid}/manifest/video.m3u8` : url;
+}
+
+async function remuxStream(url: string) {
+  const bin = ffmpegPath;
+  if (!bin) {
+    throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Couldn't read the reference video.");
+  }
+  const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(bin, ["-y", "-i", url, "-c", "copy", "-movflags", "+faststart", file], {
+      windowsHide: true,
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.slice(-500) || "ffmpeg"));
+    });
+  });
+  return file;
+}
+
+/** MP4 on our CDN when Cloudflare has published one, otherwise the stream saved to a file. */
 async function cloudflareMp4Url(url: string) {
   const parsed = new URL(url);
   if (!isStreamUrl(url)) return null;
@@ -116,19 +146,7 @@ async function cloudflareMp4Url(url: string) {
     : `${parsed.origin}/${uid}/downloads/default.mp4`;
   const head = await fetch(mp4, { method: "HEAD" });
   if (head.ok) return mp4;
-  if (env.cfStreamApiToken && env.cfAccountId) {
-    await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/stream/${uid}/downloads`,
-      { method: "POST", headers: { Authorization: `Bearer ${env.cfStreamApiToken}` } },
-    );
-    const again = await fetch(mp4, { method: "HEAD" });
-    if (again.ok) return mp4;
-  }
-  throw new AppError(
-    ERROR_CODES.GENERATION_FAILED,
-    502,
-    "Wan needs the CDN MP4 for this video, and Cloudflare has not published that file yet.",
-  );
+  return remuxStream(streamManifest(url));
 }
 
 /**
@@ -257,13 +275,7 @@ export class WanProvider implements VideoGenerationProvider {
       ].map(async (url) => {
         if (!isStreamUrl(url)) return materialize(url, "video");
         const cdn = await cloudflareMp4Url(url);
-        if (!cdn) {
-          throw new AppError(
-            ERROR_CODES.GENERATION_FAILED,
-            502,
-            "Wan needs the CDN MP4 for this video, and Cloudflare has not published that file yet.",
-          );
-        }
+        if (!cdn) return materialize(url, "video");
         return cdn;
       }),
     );

@@ -176,12 +176,11 @@ function probeDuration(file: string): Promise<number | null> {
 }
 
 /**
- * Measure each reference clip. Omni can use at most 15s of video,
- * and the output length cannot exceed 30s minus that reference.
- * A remix output matches the source clip, capped by those limits.
+ * Omni can attach at most 15s of a reference clip.
+ * The output length is the source video, up to 30s.
  */
 async function referencePlan(files: string[]) {
-  const lengths: number[] = [];
+  const ends: number[] = [];
   for (const file of files) {
     const duration = await probeDuration(file);
     if (duration != null && duration < 1) {
@@ -194,18 +193,9 @@ async function referencePlan(files: string[]) {
     if (duration == null) return null;
     const end = Math.min(15, Math.floor(duration * 10) / 10);
     if (end < 1) return null;
-    lengths.push(end);
+    ends.push(end);
   }
-  const reference = lengths.reduce((sum, seconds) => sum + seconds, 0);
-  const maxOut = Math.max(2, Math.floor(30 - reference));
-  const source = lengths[0];
-  let output = Math.round(source);
-  if (output > source + 0.05) output = Math.floor(source);
-  output = Math.min(maxOut, Math.max(2, output));
-  return {
-    ranges: lengths.map((end) => `0:${end}`).join(","),
-    duration: output,
-  };
+  return { ranges: ends.map((end) => `0:${end}`).join(",") };
 }
 
 function outputDuration(requested: number) {
@@ -279,9 +269,7 @@ export class WanProvider implements VideoGenerationProvider {
     );
     const plan = videos.length ? await referencePlan(videos) : null;
     const requested = typeof settings.duration === "number" ? settings.duration : 15;
-    const duration = plan?.duration ?? (videos.length
-      ? Math.min(outputDuration(requested), Math.max(2, Math.floor(30 - Math.min(15, requested))))
-      : outputDuration(requested));
+    const duration = outputDuration(requested);
     if (plan) {
       logger.info("remix duration", { seconds: duration, ranges: plan.ranges });
     }

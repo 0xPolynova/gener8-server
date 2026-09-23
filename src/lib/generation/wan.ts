@@ -96,6 +96,14 @@ function sniffExt(bytes: Buffer, kind: "image" | "video") {
   return kind === "video" ? ".mp4" : ".jpg";
 }
 
+function isDirectMp4(url: string) {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith(".mp4");
+  } catch {
+    return false;
+  }
+}
+
 function isStreamUrl(url: string) {
   try {
     const host = new URL(url).hostname;
@@ -293,6 +301,7 @@ export class WanProvider implements VideoGenerationProvider {
         ...(input.referenceVideoUrl ? [input.referenceVideoUrl] : []),
         ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
       ].map(async (url) => {
+        if (isDirectMp4(url)) return url;
         if (!isStreamUrl(url)) return materialize(url, "video");
         return wanReferenceFile(url);
       }),

@@ -4,6 +4,7 @@ import { env } from "@/lib/config/env";
 import { db } from "@/lib/data/repository";
 import { uploadStreamVideo } from "./cloudflare-stream";
 import { extractPosterAndFaststart } from "./media-poster";
+import { r2Configured, uploadR2 } from "@/lib/storage/r2";
 
 export async function persistPublicFile(key: string, buffer: Buffer) {
   const uploaded = await db.uploadGeneratedVideo(key, buffer);
@@ -33,6 +34,13 @@ export async function persistGeneratedClip(jobId: string, buffer: Buffer) {
     thumb = prepared.thumbnail;
   } catch {
     /* keep the original bytes if ffmpeg can’t remux this file */
+  }
+  if (r2Configured()) {
+    const videoUrl = await uploadR2(`videos/${jobId}.mp4`, video, "video/mp4");
+    const thumbnailUrl = thumb
+      ? await uploadR2(`videos/${jobId}.jpg`, thumb, "image/jpeg")
+      : null;
+    return { videoUrl, thumbnailUrl };
   }
   const streamed = await uploadStreamVideo(video, `${jobId}.mp4`);
   if (streamed) {

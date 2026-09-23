@@ -5,7 +5,6 @@ import { db } from "@/lib/data/repository";
 import { AppError, ERROR_CODES } from "@/lib/errors";
 import { evaluateEligibility } from "@/lib/gating/evaluate";
 import { providerForGeneration } from "@/lib/generation";
-import { modelPrompt } from "@/lib/generation/baseline-prompt";
 import { syncGenerationJob } from "@/lib/generation/sync";
 import {
   MAX_PROMPT_LENGTH,
@@ -53,7 +52,7 @@ generateRouter.post(
     if (prompt.length < MIN_PROMPT_LENGTH) {
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400);
     }
-    if (modelPrompt(prompt).length > MAX_PROMPT_LENGTH) {
+    if (prompt.length > MAX_PROMPT_LENGTH) {
       throw new AppError(ERROR_CODES.INVALID_PROMPT, 400, "Prompt is too long.");
     }
 
@@ -118,7 +117,7 @@ generateRouter.post(
     }
 
     const createInput = {
-      prompt: modelPrompt(prompt),
+      prompt,
       settings,
       userId: session.userId,
       referenceVideoUrl:

@@ -3,8 +3,21 @@ import path from "node:path";
 import { env } from "@/lib/config/env";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
+function imagesRoot() {
+  if (env.cfImagesApiToken.startsWith("cfut_")) return "https://batch.imagedelivery.net/images/v1";
+  return `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1`;
+}
+
+function authHeaders() {
+  return { Authorization: `Bearer ${env.cfImagesApiToken}` };
+}
+
 export function cloudflareImagesConfigured() {
   return Boolean(env.cfAccountId && env.cfImagesApiToken);
+}
+
+async function deleteCloudflareImage(id: string) {
+  await fetch(`${imagesRoot()}/${id}`, { method: "DELETE", headers: authHeaders() }).catch(() => undefined);
 }
 
 export async function uploadCloudflareImage(
@@ -16,14 +29,11 @@ export async function uploadCloudflareImage(
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(buffer)]), filename);
   if (meta) form.append("metadata", JSON.stringify(meta));
-  const res = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.cfImagesApiToken}` },
-      body: form,
-    },
-  );
+  const res = await fetch(imagesRoot(), {
+    method: "POST",
+    headers: authHeaders(),
+    body: form,
+  });
   const data = (await res.json().catch(() => ({}))) as {
     success?: boolean;
     errors?: { message?: string }[];
@@ -86,41 +96,57 @@ export async function listKolStyles(handle: string, cursor: string | null, limit
 }
 
 async function listKolStylesFromCdn(handle: string, cursor: string | null, limit: number) {
-  const wanted: { id: string; url: string; style: string }[] = [];
+  const wanted: { id: string; url: string; style: string; key: string }[] = [];
   let page = Math.max(1, Number(cursor) || 1);
   let more = true;
   const perPage = 50;
-  while (wanted.length < limit && more && page < (Number(cursor) || 1) + 6) {
+  const start = page;
+  while (wanted.length < limit && more && page < start + 6) {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}/images/v1?page=${page}&per_page=${perPage}`,
-      { headers: { Authorization: `Bearer ${env.cfImagesApiToken}` } },
+      env.cfImagesApiToken.startsWith("cfut_")
+        ? `https://batch.imagedelivery.net/images/v2?page=${page}&per_page=${perPage}`
+        : `${imagesRoot()}?page=${page}&per_page=${perPage}`,
+      { headers: authHeaders() },
     );
     const data = (await res.json().catch(() => ({}))) as {
       success?: boolean;
       errors?: { message?: string }[];
       result?: { images?: { id?: string; filename?: string; meta?: Record<string, string>; variants?: string[] }[] };
-      result_info?: { page?: number; total_count?: number };
+      result_info?: { total_count?: number };
     };
     if (!res.ok || !data.success) {
       throw new Error(data.errors?.[0]?.message || `Cloudflare Images list failed (${res.status}).`);
     }
-    for (const image of data.result?.images ?? []) {
+    const batch = data.result?.images ?? [];
+    for (const image of batch) {
       const meta = image.meta ?? {};
       const tagged = meta.kind === "kol-style" && meta.handle === handle;
       const named = (image.filename ?? "").startsWith(`${handle}-style`);
-      if (!tagged && !named) continue;
+      if (!tagged && !named || !image.id) continue;
       const url =
         image.variants?.find((item) => item.endsWith("/public")) ??
         image.variants?.[0] ??
         `https://imagedelivery.net/${env.cfImagesAccountHash}/${image.id}/public`;
-      if (image.id) wanted.push({ id: image.id, url, style: meta.style ?? "" });
+      const key = meta.style ? `${handle}|${meta.style}|${url}` : `${handle}|${image.filename || image.id}`;
+      wanted.push({ id: image.id, url, style: meta.style ?? "", key });
     }
     const total = data.result_info?.total_count ?? 0;
-    more = page * perPage < total;
     page += 1;
+    more = batch.length > 0 && (page - 1) * perPage < total;
+  }
+
+  const unique: { id: string; url: string; style: string }[] = [];
+  const seen = new Set<string>();
+  for (const image of wanted) {
+    if (seen.has(image.key)) {
+      void deleteCloudflareImage(image.id);
+      continue;
+    }
+    seen.add(image.key);
+    unique.push({ id: image.id, url: image.url, style: image.style });
   }
   return {
-    images: wanted.slice(0, limit),
+    images: unique.slice(0, limit),
     nextCursor: more ? String(page) : null,
   };
 }

@@ -450,10 +450,15 @@ export async function sbListUserVideos(
   tab: CreationsTab = "all",
 ) {
   let query = sb.from("videos").select("*").eq("user_id", userId);
-  if (tab === "published") query = query.eq("visibility", "public");
-  if (tab === "private") query = query.eq("visibility", "private");
-  if (tab === "generating") {
-    query = query.in("status", ["queued", "preparing", "generating", "processing"]);
+  if (tab === "archived") {
+    query = query.eq("status", "archived");
+  } else {
+    query = query.neq("status", "archived");
+    if (tab === "published") query = query.eq("visibility", "public");
+    if (tab === "private") query = query.eq("visibility", "private");
+    if (tab === "generating") {
+      query = query.in("status", ["queued", "preparing", "generating", "processing"]);
+    }
   }
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) throw error;

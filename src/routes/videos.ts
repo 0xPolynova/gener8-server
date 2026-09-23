@@ -79,8 +79,14 @@ videosRouter.delete(
   asyncHandler(async (req, res) => {
     const session = await getSession(req);
     if (!session) throw new AppError(ERROR_CODES.UNAUTHENTICATED, 401);
-    const ok = await db.deleteVideo(req.params.id, session.userId);
-    if (!ok) throw new AppError(ERROR_CODES.FORBIDDEN, 403);
+    const existing = await db.getVideo(req.params.id, session.userId);
+    if (!existing || existing.userId !== session.userId) {
+      throw new AppError(ERROR_CODES.FORBIDDEN, 403);
+    }
+    await db.updateVideo(req.params.id, {
+      status: "archived",
+      visibility: "private",
+    });
     res.json({ ok: true });
   }),
 );

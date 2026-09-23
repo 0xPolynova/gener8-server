@@ -9,7 +9,8 @@ export type GenerationStatus =
   | "generating"
   | "processing"
   | "complete"
-  | "failed";
+  | "failed"
+  | "archived";
 
 export type VideoCategory =
   | "cinematic"
@@ -209,7 +210,7 @@ export type DiscoverFilter =
   | "30s"
   | "experimental";
 
-export type CreationsTab = "all" | "published" | "private" | "generating";
+export type CreationsTab = "all" | "published" | "private" | "generating" | "archived";
 
 export interface ApiErrorBody {
   error: string;

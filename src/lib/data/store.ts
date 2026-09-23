@@ -196,12 +196,17 @@ class MemoryStore {
 
   listUserVideos(userId: string, tab: CreationsTab = "all"): Video[] {
     let list = this.videos.filter((v) => v.userId === userId);
-    if (tab === "published") list = list.filter((v) => v.visibility === "public");
-    if (tab === "private") list = list.filter((v) => v.visibility === "private");
-    if (tab === "generating") {
-      list = list.filter((v) =>
-        ["queued", "preparing", "generating", "processing"].includes(v.status),
-      );
+    if (tab === "archived") {
+      list = list.filter((v) => v.status === "archived");
+    } else {
+      list = list.filter((v) => v.status !== "archived");
+      if (tab === "published") list = list.filter((v) => v.visibility === "public");
+      if (tab === "private") list = list.filter((v) => v.visibility === "private");
+      if (tab === "generating") {
+        list = list.filter((v) =>
+          ["queued", "preparing", "generating", "processing"].includes(v.status),
+        );
+      }
     }
     return [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }

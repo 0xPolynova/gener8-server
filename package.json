@@ -17,6 +17,7 @@
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.99.0",
     "@supabase/supabase-js": "^2.116.0",
+    "@wan-ai/cli": "^0.0.3",
     "bs58": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

@@ -300,6 +300,26 @@ function cleanDownloadUrl(asset: WanAsset) {
   return candidates.find((url) => url && url !== logo && isVideoFile(url)) || null;
 }
 
+/** Wan only uses an image when the prompt says @Image1, @Image2, in --images order. */
+function bindOmniPrompt(input: CreateGenerationInput) {
+  const swaps: { token: string; slot: string }[] = [];
+  let image = input.referenceImages?.length ?? 0;
+  let video = input.referenceVideoUrl ? 1 : 0;
+  for (const asset of input.omniAssets ?? []) {
+    if (asset.type === "audio") continue;
+    const slot = asset.type === "image" ? `@Image${++image}` : `@Video${++video}`;
+    if (asset.name && asset.name !== slot) swaps.push({ token: asset.name, slot });
+  }
+  let prompt = input.prompt;
+  swaps.forEach((swap, index) => {
+    prompt = prompt.split(swap.token).join(`\u0000${index}\u0000`);
+  });
+  swaps.forEach((swap, index) => {
+    prompt = prompt.split(`\u0000${index}\u0000`).join(swap.slot);
+  });
+  return prompt;
+}
+
 export class WanProvider implements VideoGenerationProvider {
   readonly name = "wan";
 
@@ -324,12 +344,18 @@ export class WanProvider implements VideoGenerationProvider {
     if (plan) {
       logger.info("remix duration", { seconds: duration, ranges: plan.ranges });
     }
+    const prompt = bindOmniPrompt(input);
+    logger.info("omni refs", {
+      images: images.length,
+      videos: videos.length,
+      bound: (prompt.match(/@Image\d+/g) ?? []).length,
+    });
     const args = [
       "omni2video",
       "--model",
       "wan3.0",
       "--prompt",
-      input.prompt,
+      prompt,
       "--duration",
       String(duration),
       "--resolution",

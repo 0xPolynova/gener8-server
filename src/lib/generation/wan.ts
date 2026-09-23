@@ -146,7 +146,7 @@ async function wanReferenceFile(url: string) {
   await runFfmpeg([
     "-y",
     "-t",
-    "15",
+    "30",
     "-i",
     source,
     "-c:v",
@@ -209,8 +209,7 @@ function probeDuration(file: string): Promise<number | null> {
 }
 
 /**
- * Omni can attach at most 15s of a reference clip.
- * The output length is the source video, up to 30s.
+ * Reference and output both follow the source video, up to 30s.
  */
 async function referencePlan(files: string[]) {
   const ends: number[] = [];
@@ -224,7 +223,7 @@ async function referencePlan(files: string[]) {
       );
     }
     if (duration == null) return null;
-    const end = Math.min(15, Math.floor(duration * 10) / 10);
+    const end = Math.min(30, Math.floor(duration * 10) / 10);
     if (end < 1) return null;
     ends.push(end);
   }

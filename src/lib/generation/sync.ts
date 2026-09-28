@@ -1,5 +1,6 @@
 import { db } from "@/lib/data/repository";
 import { getVideoProvider } from "@/lib/generation";
+import { joinHalves, startSecondHalf } from "@/lib/generation/wan";
 import { logger } from "@/lib/log";
 import type { GenerationJob } from "@/types";
 
@@ -40,6 +41,52 @@ export async function syncGenerationJob(job: GenerationJob) {
   }
 
   if (status.status === "complete") {
+    const split = job.settings.split;
+    if (split && !split.firstUrl) {
+      const first = await provider.getResult(job.providerJobId);
+      if (!first?.videoUrl) {
+        const waiting = await db.updateJob(job.id, {
+          status: "generating",
+          progress: Math.max(job.progress, 45),
+        });
+        await db.updateVideo(job.videoId, { status: "generating" });
+        return waiting;
+      }
+      const secondId = await startSecondHalf(split);
+      logger.info("remix second half", { videoId: job.videoId, secondId });
+      const updated = await db.updateJob(job.id, {
+        status: "generating",
+        progress: 55,
+        providerJobId: secondId,
+        settings: { ...job.settings, split: { ...split, firstUrl: first.videoUrl } },
+      });
+      await db.updateVideo(job.videoId, { status: "generating" });
+      return updated;
+    }
+    if (split?.firstUrl) {
+      const second = await provider.getResult(job.providerJobId);
+      if (!second?.videoUrl) {
+        const waiting = await db.updateJob(job.id, {
+          status: "generating",
+          progress: Math.max(job.progress, 80),
+        });
+        await db.updateVideo(job.videoId, { status: "generating" });
+        return waiting;
+      }
+      const joined = await joinHalves(split.firstUrl, second.videoUrl, job.videoId);
+      logger.info("remix joined", { videoId: job.videoId });
+      const updated = await db.updateJob(job.id, {
+        status: "complete",
+        progress: 100,
+        completedAt: new Date().toISOString(),
+      });
+      await db.updateVideo(job.videoId, {
+        status: "complete",
+        videoUrl: joined.videoUrl,
+        thumbnailUrl: joined.thumbnailUrl,
+      });
+      return updated;
+    }
     const result = await provider.getResult(job.providerJobId);
     if (!result?.videoUrl) {
       logger.warn("generation complete but video not ready yet", {

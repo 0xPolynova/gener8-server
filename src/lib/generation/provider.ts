@@ -2,6 +2,7 @@ import type {
   GenerationJob,
   GenerationSettings,
   GenerationStatus,
+  RemixSplit,
   Video,
 } from "@/types";
 
@@ -29,6 +30,7 @@ export interface ProviderJob {
   progress: number;
   error?: string;
   duration?: number;
+  split?: RemixSplit;
 }
 
 export interface ProviderResult {

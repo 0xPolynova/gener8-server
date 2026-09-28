@@ -116,6 +116,15 @@ export interface GenerationJob {
   completedAt: string | null;
 }
 
+export interface RemixSplit {
+  secondUrl: string;
+  secondSeconds: number;
+  prompt: string;
+  ratio: string;
+  imageUrls: string[];
+  firstUrl?: string;
+}
+
 export interface GenerationSettings {
   model: string;
   aspectRatio: AspectRatio;
@@ -127,6 +136,7 @@ export interface GenerationSettings {
   promptAdherence: number;
   creativity: number;
   publicPrompt: boolean;
+  split?: RemixSplit;
 }
 
 export interface Like {

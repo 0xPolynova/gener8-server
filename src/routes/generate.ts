@@ -222,7 +222,7 @@ generateRouter.post(
       status: providerJob.status,
       progress: providerJob.progress,
       prompt,
-      settings,
+      settings: providerJob.split ? { ...settings, split: providerJob.split } : settings,
       provider: provider.name,
       providerJobId: providerJob.id,
       errorCode: null,

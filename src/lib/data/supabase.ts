@@ -581,6 +581,7 @@ export async function sbUpdateJob(
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.progress !== undefined) row.progress = patch.progress;
   if (patch.providerJobId !== undefined) row.provider_job_id = patch.providerJobId;
+  if (patch.settings !== undefined) row.settings = patch.settings;
   if (patch.errorCode !== undefined) row.error_code = patch.errorCode;
   if (patch.errorMessage !== undefined) row.error_message = patch.errorMessage;
   if (patch.startedAt !== undefined) row.started_at = patch.startedAt;

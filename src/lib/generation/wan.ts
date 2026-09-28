@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import ffmpegPath from "ffmpeg-static";
@@ -13,6 +13,8 @@ import type {
 import { env } from "@/lib/config/env";
 import { AppError, ERROR_CODES } from "@/lib/errors";
 import { logger } from "@/lib/log";
+import type { RemixSplit } from "@/types";
+import { bunnyConfigured, uploadBunny } from "@/lib/storage/bunny";
 import { persistGeneratedClip } from "./persist";
 
 function cliEntry() {
@@ -307,6 +309,43 @@ function outputDuration(requested: number, referenceSeconds: number) {
   return Math.min(Math.max(value, 2), max);
 }
 
+function cropEnd(duration: number) {
+  return Math.min(15, Math.floor((duration - 0.1) * 10) / 10);
+}
+
+/** A file longer than 15s is cut into two Omni-sized pieces, in order. */
+async function splitReference(file: string) {
+  const duration = await probeDuration(file);
+  if (duration == null || duration <= 15.2) return null;
+  const secondLen = Math.min(15, duration - 15);
+  if (secondLen < 1) return null;
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const first = path.join(os.tmpdir(), `gener8-${stamp}-a.mp4`);
+  const second = path.join(os.tmpdir(), `gener8-${stamp}-b.mp4`);
+  await runFfmpeg(["-y", "-i", file, "-t", "15", "-c", "copy", "-movflags", "+faststart", first]);
+  await runFfmpeg([
+    "-y",
+    "-ss",
+    "15",
+    "-i",
+    file,
+    "-t",
+    secondLen.toFixed(1),
+    "-c",
+    "copy",
+    "-movflags",
+    "+faststart",
+    second,
+  ]);
+  const firstDur = await probeDuration(first);
+  const secondDur = await probeDuration(second);
+  if (firstDur == null || secondDur == null || secondDur < 1) return null;
+  const firstSeconds = cropEnd(firstDur);
+  const secondSeconds = cropEnd(secondDur);
+  if (firstSeconds < 1 || secondSeconds < 1) return null;
+  return { first, second, firstSeconds, secondSeconds };
+}
+
 function mapLabel(label: string | undefined): ProviderJob["status"] {
   switch (label) {
     case "succeeded":
@@ -384,7 +423,30 @@ export class WanProvider implements VideoGenerationProvider {
         ...(input.omniAssets ?? []).filter((asset) => asset.type === "video").map((asset) => asset.url),
       ].map((url) => localReference(url)),
     );
-    const plan = videos.length ? await referencePlan(videos) : null;
+    let referenceFiles = videos;
+    let pendingSplit: Omit<RemixSplit, "prompt"> | null = null;
+    if (input.referenceVideoUrl && videos[0] && bunnyConfigured()) {
+      const halves = await splitReference(videos[0]);
+      if (halves) {
+        referenceFiles = [halves.first, ...videos.slice(1)];
+        const secondUrl = await uploadBunny(
+          `videos/parts/${path.basename(halves.second)}`,
+          await readFile(halves.second),
+          "video/mp4",
+        );
+        pendingSplit = {
+          secondUrl,
+          secondSeconds: halves.secondSeconds,
+          ratio,
+          imageUrls: [
+            ...(input.referenceImages ?? []),
+            ...(input.omniAssets ?? []).filter((asset) => asset.type === "image").map((asset) => asset.url),
+          ],
+        };
+        logger.info("remix split", { first: halves.firstSeconds, second: halves.secondSeconds });
+      }
+    }
+    const plan = referenceFiles.length ? await referencePlan(referenceFiles) : null;
     const requested = typeof settings.duration === "number" ? settings.duration : 15;
     const duration = outputDuration(requested, plan?.seconds ?? 0);
     if (plan) {
@@ -410,14 +472,21 @@ export class WanProvider implements VideoGenerationProvider {
       ratio,
     ];
     if (images.length) args.push("--images", images.join(","));
-    if (videos.length) args.push("--videos", videos.join(","));
+    if (referenceFiles.length) args.push("--videos", referenceFiles.join(","));
     if (plan) args.push("--video-ranges", plan.ranges);
 
     const data = (await runWan(args)) as { taskId?: string };
     if (!data?.taskId) {
       throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Wan CLI did not return a task id.");
     }
-    return { id: data.taskId, status: "queued", progress: 0, duration };
+    const secondDuration = pendingSplit ? outputDuration(pendingSplit.secondSeconds, pendingSplit.secondSeconds) : 0;
+    return {
+      id: data.taskId,
+      status: "queued" as const,
+      progress: 0,
+      duration: duration + secondDuration,
+      ...(pendingSplit ? { split: { ...pendingSplit, prompt } } : {}),
+    };
   }
 
   async getGenerationStatus(providerJobId: string): Promise<ProviderJob> {
@@ -458,6 +527,81 @@ export class WanProvider implements VideoGenerationProvider {
     const hosted = await persistGeneratedClip(providerJobId, Buffer.from(await download.arrayBuffer()));
     return hosted;
   }
+}
+
+export async function startSecondHalf(split: RemixSplit) {
+  const job = await wanProvider.createGeneration({
+    prompt: split.prompt,
+    userId: "split",
+    referenceVideoUrl: split.secondUrl,
+    referenceImages: [],
+    omniAssets: split.imageUrls.map((url, index) => ({
+      type: "image" as const,
+      url,
+      name: `@Image${index + 1}`,
+    })),
+    settings: {
+      model: "wan3.0",
+      aspectRatio: split.ratio as CreateGenerationInput["settings"]["aspectRatio"],
+      duration: Math.round(split.secondSeconds) as CreateGenerationInput["settings"]["duration"],
+      quality: "standard",
+      negativePrompt: "",
+      seed: null,
+      cameraMovement: "static",
+      promptAdherence: 70,
+      creativity: 50,
+      publicPrompt: true,
+    },
+  });
+  return job.id;
+}
+
+export async function joinHalves(firstUrl: string, secondUrl: string, videoId: string) {
+  const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const first = path.join(os.tmpdir(), `gener8-${stamp}-1.mp4`);
+  const second = path.join(os.tmpdir(), `gener8-${stamp}-2.mp4`);
+  const list = path.join(os.tmpdir(), `gener8-${stamp}.txt`);
+  const out = path.join(os.tmpdir(), `gener8-${stamp}-out.mp4`);
+  for (const [url, file] of [
+    [firstUrl, first],
+    [secondUrl, second],
+  ] as const) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new AppError(ERROR_CODES.GENERATION_FAILED, 502, "Couldn't download a finished half.");
+    }
+    await writeFile(file, Buffer.from(await response.arrayBuffer()));
+  }
+  await writeFile(list, `file '${first.replace(/\\/g, "/")}'\nfile '${second.replace(/\\/g, "/")}'\n`);
+  try {
+    await runFfmpeg(["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", out]);
+  } catch {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      first,
+      "-i",
+      second,
+      "-filter_complex",
+      "[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[v][a]",
+      "-map",
+      "[v]",
+      "-map",
+      "[a]",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "20",
+      "-c:a",
+      "aac",
+      "-movflags",
+      "+faststart",
+      out,
+    ]);
+  }
+  return persistGeneratedClip(videoId, await readFile(out));
 }
 
 export const wanProvider = new WanProvider();

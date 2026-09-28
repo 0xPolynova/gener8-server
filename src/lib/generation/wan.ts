@@ -278,7 +278,8 @@ function probeDuration(file: string): Promise<number | null> {
 }
 
 /**
- * Reference and output both follow the source video, up to 30s.
+ * Wan 3.0 Omni: each reference crop is 1–15s, taken from the first 30s of the file.
+ * Output length is then at most floor(30 − that crop).
  */
 async function referencePlan(files: string[]) {
   const ends: number[] = [];
@@ -292,18 +293,18 @@ async function referencePlan(files: string[]) {
       );
     }
     if (duration == null) return null;
-    // ffmpeg's container length is slightly longer than the duration Wan stores.
-    // 12.10 was sent as 12.1 and rejected: "Trim end time cannot exceed original duration".
-    const end = Math.min(30, Math.floor((duration - 0.1) * 10) / 10);
+    // Stay under the container length Wan stores, and inside the 15s crop cap.
+    const end = Math.min(15, Math.floor((duration - 0.1) * 10) / 10);
     if (end < 1) return null;
     ends.push(end);
   }
-  return { ranges: ends.map((end) => `0:${end}`).join(",") };
+  return { ranges: ends.map((end) => `0:${end}`).join(","), seconds: ends.reduce((sum, end) => sum + end, 0) };
 }
 
-function outputDuration(requested: number) {
+function outputDuration(requested: number, referenceSeconds: number) {
+  const max = Math.max(2, Math.floor(30 - referenceSeconds));
   const value = Number.isFinite(requested) ? Math.round(requested) : 5;
-  return Math.min(Math.max(value, 2), 30);
+  return Math.min(Math.max(value, 2), max);
 }
 
 function mapLabel(label: string | undefined): ProviderJob["status"] {
@@ -385,7 +386,7 @@ export class WanProvider implements VideoGenerationProvider {
     );
     const plan = videos.length ? await referencePlan(videos) : null;
     const requested = typeof settings.duration === "number" ? settings.duration : 15;
-    const duration = outputDuration(requested);
+    const duration = outputDuration(requested, plan?.seconds ?? 0);
     if (plan) {
       logger.info("remix duration", { seconds: duration, ranges: plan.ranges });
     }

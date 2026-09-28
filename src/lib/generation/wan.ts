@@ -197,7 +197,9 @@ async function materialize(url: string, kind: "image" | "video") {
   const source = local ?? url;
   const ext = path.extname(source.split(/[?#]/)[0] ?? "").toLowerCase();
   const allowed = kind === "image" ? IMAGE_EXTS : VIDEO_EXTS;
-  if (!/^https?:\/\//.test(source) && allowed.has(ext)) return source;
+  if (!/^https?:\/\//.test(source) && allowed.has(ext)) {
+    return kind === "image" ? fitWanImage(source) : source;
+  }
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -206,7 +208,50 @@ async function materialize(url: string, kind: "image" | "video") {
   const bytes = Buffer.from(await response.arrayBuffer());
   const file = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}${sniffExt(bytes, kind)}`);
   await writeFile(file, bytes);
-  return file;
+  return kind === "image" ? fitWanImage(file) : file;
+}
+
+function probeImageSize(file: string): Promise<{ width: number; height: number } | null> {
+  const bin = ffmpegPath;
+  if (!bin) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const child = spawn(bin, ["-i", file], { windowsHide: true });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", () => resolve(null));
+    child.on("close", () => {
+      const match = stderr.match(/Video:.*?(\d{2,5})x(\d{2,5})/);
+      if (!match) {
+        resolve(null);
+        return;
+      }
+      resolve({ width: Number(match[1]), height: Number(match[2]) });
+    });
+  });
+}
+
+/** Wan rejects reference images smaller than 240px on either side. */
+async function fitWanImage(file: string) {
+  const size = await probeImageSize(file);
+  if (!size || size.width < 2 || size.height < 2) return file;
+  const short = Math.min(size.width, size.height);
+  const long = Math.max(size.width, size.height);
+  if (short >= 768 && long <= 8000) return file;
+  let scale = short < 768 ? 768 / short : 1;
+  if (long * scale > 8000) scale = 8000 / long;
+  const even = (value: number) => {
+    const rounded = Math.max(240, Math.min(8000, Math.round(value)));
+    return rounded % 2 === 0 ? rounded : rounded - 1;
+  };
+  const width = even(size.width * scale);
+  const height = even(size.height * scale);
+  const ext = path.extname(file) || ".png";
+  const out = path.join(os.tmpdir(), `gener8-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`);
+  await runFfmpeg(["-y", "-i", file, "-vf", `scale=${width}:${height}:flags=lanczos`, out]);
+  return out;
 }
 
 function probeDuration(file: string): Promise<number | null> {
